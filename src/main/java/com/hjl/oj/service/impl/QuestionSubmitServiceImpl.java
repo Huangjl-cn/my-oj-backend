@@ -1,0 +1,157 @@
+package com.hjl.oj.service.impl;
+
+import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.hjl.oj.common.ErrorCode;
+import com.hjl.oj.constant.CommonConstant;
+import com.hjl.oj.exception.BusinessException;
+import com.hjl.oj.judge.JudgeService;
+import com.hjl.oj.mapper.QuestionSubmitMapper;
+import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitAddRequest;
+import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
+import com.hjl.oj.model.entity.Question;
+import com.hjl.oj.model.entity.QuestionSubmit;
+import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
+import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.QuestionSubmitVO;
+import com.hjl.oj.service.QuestionService;
+import com.hjl.oj.service.QuestionSubmitService;
+import com.hjl.oj.service.UserService;
+import com.hjl.oj.utils.SqlUtils;
+import jakarta.annotation.Resource;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+@Service
+public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper, QuestionSubmit>
+        implements QuestionSubmitService {
+
+    @Resource
+    private QuestionService questionService;
+
+    @Resource
+    private UserService userService;
+
+    @Resource
+    @Lazy
+    private JudgeService judgeService;
+
+    /**
+     * 提交题目
+     */
+    @Override
+    public long doQuestionSubmit(QuestionSubmitAddRequest questionSubmitAddRequest, User loginUser) {
+        //检验编程语言是否合法
+        String language = questionSubmitAddRequest.getLanguage();
+        QuestionSubmitLanguageEnum languageEnum = QuestionSubmitLanguageEnum.getEnumByValue(language);
+        if (languageEnum == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "编程语言错误");
+        }
+        // 判断实体是否存在，根据类别获取实体
+        Question question = questionService.getById(questionSubmitAddRequest.getQuestionId());
+        if (question == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        // 是否已提交题目
+        long userId = loginUser.getId();
+        // 每个用户串行提交题目
+        QuestionSubmit questionSubmit = new QuestionSubmit();
+        questionSubmit.setUserId(userId);
+        questionSubmit.setQuestionId(questionSubmitAddRequest.getQuestionId());
+        questionSubmit.setCode(questionSubmitAddRequest.getCode());
+        questionSubmit.setLanguage(language);
+        //初始化题目提交状态
+        questionSubmit.setStatus(QuestionSubmitStatusEnum.WAITING.getValue());
+        questionSubmit.setJudgeInfo("{}");
+        boolean save = this.save(questionSubmit);
+        if (!save) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "数据插入失败");
+        }
+        //执行判题服务
+        Long questionSubmitId = questionSubmit.getId();
+        //异步去执行代码、判题
+        CompletableFuture.runAsync(() -> {
+            QuestionSubmit newquestionSubmit = judgeService.doJudge(questionSubmitId);
+            if (newquestionSubmit == null) {
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "判题失败");
+            }
+        });
+        return questionSubmitId;
+    }
+
+    /**
+     * 获取查询包装类：前端根据用户可能会用到哪些字段查询，传递一个请求对象，返回mybatis框架支持的查询QueryWrapper类
+     */
+    @Override
+    public QueryWrapper<QuestionSubmit> getQueryWrapper(QuestionSubmitQueryRequest questionSubmitSubmitQueryRequest) {
+        QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
+        if (questionSubmitSubmitQueryRequest == null) {
+            return queryWrapper;
+        }
+        //考虑用户会用哪些字段来查询
+        Long questionId = questionSubmitSubmitQueryRequest.getQuestionId();
+        Long userId = questionSubmitSubmitQueryRequest.getUserId();
+        String language = questionSubmitSubmitQueryRequest.getLanguage();
+        Integer status = questionSubmitSubmitQueryRequest.getStatus();
+        String sortField = questionSubmitSubmitQueryRequest.getSortField();
+        String sortOrder = questionSubmitSubmitQueryRequest.getSortOrder();
+        // 拼接查询条件
+        queryWrapper.eq(ObjectUtils.isNotEmpty(questionId), "questionId", questionId);
+        queryWrapper.eq(ObjectUtils.isNotEmpty(userId), "userId", userId);
+        queryWrapper.eq(StringUtils.isNotEmpty(language), "language", language);
+        queryWrapper.eq(QuestionSubmitStatusEnum.getEnumByValue(status) != null, "status", status);
+        queryWrapper.eq("isDelete", false);
+        queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
+                sortField);
+        return queryWrapper;
+    }
+
+    /**
+     * 用于获取实体的封装类
+     */
+    @Override
+    public QuestionSubmitVO getQuestionSubmitVO(QuestionSubmit questionSubmit, User loginUser) {
+        QuestionSubmitVO questionSubmitVO = QuestionSubmitVO.objToVo(questionSubmit);
+        Long userId = loginUser.getId();
+        //脱敏处理：除了当前用户和管理员，其余用户是不允许查看提交代码的
+        if (!userId.equals(questionSubmit.getUserId()) && !userService.isAdmin(loginUser)) {
+            questionSubmitVO.setCode(null);
+        }
+        return questionSubmitVO;
+    }
+
+    /**
+     * 分页获取实体的封装类
+     *
+     * @param questionSubmitPage 分页实体
+     * @param loginUser          当前用户
+     * @return 分页封装类
+     */
+    @Override
+    public Page<QuestionSubmitVO> getQuestionSubmitVOPage(Page<QuestionSubmit> questionSubmitPage, User loginUser) {
+        List<QuestionSubmit> questionSubmitList = questionSubmitPage.getRecords();
+        Page<QuestionSubmitVO> questionSubmitVOPage = new Page<>(questionSubmitPage.getCurrent(), questionSubmitPage.getSize(), questionSubmitPage.getTotal());
+        if (CollUtil.isEmpty(questionSubmitList)) {
+            return questionSubmitVOPage;
+        }
+        //暂时只做了脱敏，没有关联用户和题目
+        List<QuestionSubmitVO> questionSubmitVOList = questionSubmitList.stream()
+                .map(questionSubmit -> getQuestionSubmitVO(questionSubmit, loginUser))
+                .collect(Collectors.toList());
+        questionSubmitVOPage.setRecords(questionSubmitVOList);
+        return questionSubmitVOPage;
+    }
+}
+
+
+
+
