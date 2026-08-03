@@ -17,14 +17,10 @@ public class CodeSandboxFactory {
      * @return 具体代码沙箱
      */
     public static CodeSandbox newInstance(String type) {
-        switch (type) {
-            case "remote":
-                return SpringContextUtils.getBean(RemoteCodeSandbox.class);
-            case "thirdParty":
-                return new ThirdPartyCodeSandbox();
-            case "example":
-            default:
-                return new ExampleCodeSandbox();
-        }
+        return switch (type) {
+            case "remote" -> SpringContextUtils.getBean(RemoteCodeSandbox.class);
+            case "thirdParty" -> new ThirdPartyCodeSandbox();
+            default -> new ExampleCodeSandbox();
+        };
     }
 }

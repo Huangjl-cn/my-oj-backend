@@ -7,6 +7,7 @@ import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitAddRequest;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
 
 public interface QuestionSubmitService extends IService<QuestionSubmit> {
@@ -15,6 +16,14 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
      * 题目提交
      */
     long doQuestionSubmit(QuestionSubmitAddRequest questionSubmitAddRequest, User loginUser);
+
+    /**
+     * 仅当提交处于预期状态时更新，保证状态转换由一条 SQL 原子完成。
+     */
+    boolean updateStatusIfCurrent(long questionSubmitId,
+                                  QuestionSubmitStatusEnum currentStatus,
+                                  QuestionSubmitStatusEnum targetStatus,
+                                  String judgeInfo);
 
     /**
      * 获取查询条件

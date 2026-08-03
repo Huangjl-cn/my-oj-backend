@@ -4,17 +4,17 @@ import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import org.springframework.stereotype.Component;
 
 /**
- * Java 程序的判题策略
+ * Python 补偿解释器启动所需的时间和内存。
  */
 @Component
-public class JavaLanguageJudgeStrategy extends AbstractJudgeStrategy implements LanguageJudgeStrategy {
+public class PythonLanguageJudgeStrategy extends AbstractJudgeStrategy implements LanguageJudgeStrategy {
 
-    private static final long ADDITIONAL_MEMORY_KB = 64 * 1024L;
+    private static final long ADDITIONAL_MEMORY_KB = 32 * 1024L;
     private static final long ADDITIONAL_TIME_MS = 2000L;
 
     @Override
     public QuestionSubmitLanguageEnum getLanguage() {
-        return QuestionSubmitLanguageEnum.JAVA;
+        return QuestionSubmitLanguageEnum.PYTHON;
     }
 
     @Override

@@ -4,8 +4,8 @@ import com.hjl.oj.judge.codesandbox.CodeSandbox;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
+import com.hjl.oj.model.enums.ExecuteStatusEnum;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
-import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -22,7 +22,7 @@ public class ExampleCodeSandbox implements CodeSandbox {
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
         executeCodeResponse.setOutputList(inputList);
         executeCodeResponse.setMessage("测试执行成功");
-        executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
+        executeCodeResponse.setStatus(ExecuteStatusEnum.ACCEPTED.getValue());
         JudgeInfo judgeInfo = new JudgeInfo();
         judgeInfo.setMessage(JudgeInfoMessageEnum.ACCEPTED.getText());
         judgeInfo.setMemory(100L);

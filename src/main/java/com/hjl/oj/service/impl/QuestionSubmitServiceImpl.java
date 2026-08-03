@@ -2,6 +2,7 @@ package com.hjl.oj.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.hjl.oj.common.ErrorCode;
@@ -22,16 +23,18 @@ import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
 import com.hjl.oj.utils.SqlUtils;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper, QuestionSubmit>
         implements QuestionSubmitService {
 
@@ -44,6 +47,9 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
     @Resource
     @Lazy
     private JudgeService judgeService;
+
+    @Resource(name = "judgeExecutor")
+    private ExecutorService judgeExecutor;
 
     /**
      * 提交题目
@@ -78,14 +84,31 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         }
         //执行判题服务
         Long questionSubmitId = questionSubmit.getId();
-        //异步去执行代码、判题
-        CompletableFuture.runAsync(() -> {
-            QuestionSubmit newquestionSubmit = judgeService.doJudge(questionSubmitId);
-            if (newquestionSubmit == null) {
-                throw new BusinessException(ErrorCode.OPERATION_ERROR, "判题失败");
+        // 使用专用虚拟线程异步判题，异常由判题服务同步到提交状态。
+        judgeExecutor.execute(() -> {
+            try {
+                judgeService.processSubmission(questionSubmitId);
+            } catch (Exception e) {
+                log.error("判题任务执行失败，questionSubmitId={}", questionSubmitId, e);
             }
         });
         return questionSubmitId;
+    }
+
+    @Override
+    public boolean updateStatusIfCurrent(long questionSubmitId,
+                                         QuestionSubmitStatusEnum currentStatus,
+                                         QuestionSubmitStatusEnum targetStatus,
+                                         String judgeInfo) {
+        LambdaUpdateWrapper<QuestionSubmit> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(QuestionSubmit::getId, questionSubmitId)
+                .eq(QuestionSubmit::getStatus, currentStatus.getValue())
+                .eq(QuestionSubmit::getIsDelete, 0)
+                .set(QuestionSubmit::getStatus, targetStatus.getValue());
+        if (judgeInfo != null) {
+            updateWrapper.set(QuestionSubmit::getJudgeInfo, judgeInfo);
+        }
+        return this.update(updateWrapper);
     }
 
     /**

@@ -8,22 +8,22 @@
 
 - **用户管理**：注册、登录、个人信息管理
 - **题目管理**：题目列表、题目详情、题目编辑
-- **代码提交**：支持Java语言的代码提交
+- **代码提交**：支持 Java、C++、Go、Python 和 JavaScript
 - **自动判题**：调用远程代码沙箱执行用户代码并进行判题
 - **判题结果**：返回执行结果、运行时间、内存消耗等详细信息
 
 ## 项目使用的工具栈
 
-| 技术/框架 | 版本 | 用途 |
-|---------|------|------|
-| Spring Boot | 3.5.4 | 基础框架 |
-| Java | 21 | 开发语言 |
+| 技术/框架 | 版本     | 用途 |
+|---------|--------|------|
+| Spring Boot | 3.5.16 | 基础框架 |
+| Java | 21     | 开发语言 |
 | MyBatis-Plus | 3.5.17 | ORM框架（spring-boot3 starter + jsqlparser分页） |
-| MySQL | - | 数据库 |
+| MySQL | -      | 数据库 |
 | Hutool | 5.8.47 | 工具库 |
-| Knife4j | 4.4.0 | 接口文档（OpenAPI 3 + Jakarta） |
-| Lombok | - | 代码简化 |
-| Spring AOP | - | 面向切面编程（权限校验） |
+| Knife4j | 4.4.0  | 接口文档（OpenAPI 3 + Jakarta） |
+| Lombok | -      | 代码简化 |
+| Spring AOP | -      | 面向切面编程（权限校验） |
 
 ## 项目结构
 
@@ -110,7 +110,8 @@ codesandbox:
 5. **接口文档**：dev 开启 Knife4j（`/api/doc.html`）；prod 关闭 knife4j 和 springdoc（`/v3/api-docs` 也不可访问，防止泄露接口结构）。
 6. **代码沙箱配置**：
    - `codesandbox.type`：`remote`（调用外部沙箱接口）、`example`（本地模拟）、`thirdParty`（占位）；
-   - `codesandbox.url`：仅 remote 生效且不含 `/executeCode` 后缀（沙箱调用方会自行拼接），Java 代码请求 `/executeCode`，其他语言请求 `/executeCodeByAI`，请求头带 `auth: secretKey` 鉴权。
+   - `codesandbox.url`：仅 remote 生效且不含 `/executeCode` 后缀（沙箱调用方会自行拼接）；所有语言统一请求 `/executeCode`，由代码沙箱按语言选择执行环境，请求头带 `auth: secretKey` 鉴权。
+   - `codesandbox.timeout`：远程沙箱 HTTP 连接和读取超时，默认 `60000` ms。
 7. **日志**：由 `logback-spring.xml` 管理，dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件日志（`logs/`，按天滚动保留 30 天）+ ERROR 单独文件。
 
 ## 项目启动
@@ -151,9 +152,10 @@ codesandbox:
 判题模块是系统的核心，负责执行用户提交的代码并进行判题。采用设计模式组合：
 
 - **代码沙箱**：`CodeSandbox` 接口 + `CodeSandboxFactory` 工厂（按配置创建实例）+ `CodeSandboxProxy` 代理（日志拓展）
-- **判题策略**：`JudgeStrategy` 接口 + `DefaultJudgeStrategy` / `JavaLanguageJudgeStrategy`，由 `JudgeManager` 按语言选择
-- **判题编排**：`JudgeServiceImpl.doJudge` 负责状态流转（待判题 → 判题中 → 成功）与结果回写
-- **异步判题**：提交后通过 `CompletableFuture.runAsync` 异步执行判题，不阻塞请求
+- **判题策略**：`AbstractJudgeStrategy.evaluate` 用模板方法统一判题流程，`JudgeManager.applyStrategy` 按语言选择策略；C++ 使用基准限制，Go、Java、Python 和 JavaScript 分别补偿运行时资源开销
+- **判题编排**：`JudgeServiceImpl.processSubmission` 原子抢占待判题提交，执行沙箱与策略流水线，并将任务收敛到成功或失败终态
+- **异步判题**：提交后通过专用 Java 21 虚拟线程执行器异步判题，不阻塞 HTTP 请求
+- **结果语义**：提交状态“成功”表示判题流程完成，最终 verdict、首个失败用例或沙箱错误堆栈保存在 `judgeInfo.message`
 
 ### 2. 用户模块
 
@@ -201,7 +203,7 @@ docker compose up -d
 
 ## 未来规划
 
-- [ ] 支持更多编程语言
+- [ ] 扩展更多编程语言与沙箱镜像
 - [ ] 优化判题逻辑和代码书写方式
 - [ ] 添加题目分类和标签功能
 - [ ] 接入 Redis 实现 session 共享（为微服务化做准备）

@@ -8,10 +8,10 @@ import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 public interface JudgeStrategy {
 
     /**
-     * 执行判题
+     * 根据沙箱结果和题目限制评估判题结果
      *
      * @param judgeContext 上下文
      * @return 判题信息
      */
-    JudgeInfo doJudge(JudgeContext judgeContext);
+    JudgeInfo evaluate(JudgeContext judgeContext);
 }

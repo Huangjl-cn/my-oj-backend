@@ -13,10 +13,12 @@ import com.hjl.oj.judge.strategy.JudgeContext;
 import com.hjl.oj.model.dto.question.JudgeCase;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
+import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class JudgeServiceImpl implements JudgeService {
 
     @Resource
@@ -40,30 +43,35 @@ public class JudgeServiceImpl implements JudgeService {
 
 
     @Override
-    public QuestionSubmit doJudge(long questionSubmitId) {
-        // 1）传入题目的提交 id，获取到对应的题目、提交信息（包含代码、编程语言等）
+    public QuestionSubmit processSubmission(long questionSubmitId) {
+        // 1）获取提交信息，并原子抢占判题任务
         QuestionSubmit questionSubmit = questionSubmitService.getById(questionSubmitId);
         if (questionSubmit == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "提交信息不存在");
         }
-        Long questionId = questionSubmit.getQuestionId();
-        Question question = questionService.getById(questionId);
+        boolean claimed = questionSubmitService.updateStatusIfCurrent(
+                questionSubmitId,
+                QuestionSubmitStatusEnum.WAITING,
+                QuestionSubmitStatusEnum.RUNNING,
+                null);
+        if (!claimed) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "提交已被其他判题任务处理");
+        }
+
+        try {
+            return runJudgePipeline(questionSubmitId, questionSubmit);
+        } catch (Exception e) {
+            markFailed(questionSubmitId);
+            throw e;
+        }
+    }
+
+    private QuestionSubmit runJudgePipeline(long questionSubmitId, QuestionSubmit questionSubmit) {
+        Question question = questionService.getById(questionSubmit.getQuestionId());
         if (question == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "题目不存在");
         }
-        // 2）如果题目提交状态不为等待中，就不用重复执行了
-        if (!QuestionSubmitStatusEnum.WAITING.getValue().equals(questionSubmit.getStatus())) {
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "题目正在判题中");
-        }
-        // 3）更改判题（题目提交）的状态为 “判题中”，防止重复执行
-        QuestionSubmit questionSubmitUpdate = new QuestionSubmit();
-        questionSubmitUpdate.setId(questionSubmitId);
-        questionSubmitUpdate.setStatus(QuestionSubmitStatusEnum.RUNNING.getValue());
-        boolean update = questionSubmitService.updateById(questionSubmitUpdate);
-        if (!update) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "题目状态更新错误");
-        }
-        // 4）调用沙箱，获取到执行结果
+        // 2）调用沙箱，获取执行结果
         //使用工厂模式来获取代码沙箱的类型
         CodeSandbox codeSandbox = CodeSandboxFactory.newInstance(type);
         //使用代理的模式来进行，进行日志输出等功能拓展
@@ -91,17 +99,34 @@ public class JudgeServiceImpl implements JudgeService {
         judgeContext.setJudgeCaseList(judgeCaseList);
         judgeContext.setQuestion(question);
         judgeContext.setQuestionSubmit(questionSubmit);
-        //根据某些属性来获取执行哪个判题策略
-        JudgeInfo judgeInfo = judgeManager.doJudge(judgeContext);
-        // 6）修改数据库中的判题结果
-        questionSubmitUpdate = new QuestionSubmit();
-        questionSubmitUpdate.setId(questionSubmitId);
-        questionSubmitUpdate.setStatus(QuestionSubmitStatusEnum.SUCCEED.getValue());
-        questionSubmitUpdate.setJudgeInfo(JSONUtil.toJsonStr(judgeInfo));
-        update = questionSubmitService.updateById(questionSubmitUpdate);
-        if (!update) {
+        //根据语言属性来获取执行哪个判题策略
+        JudgeInfo judgeInfo = judgeManager.applyStrategy(judgeContext);
+        // 3）仅允许仍在判题中的任务进入成功终态
+        boolean completed = questionSubmitService.updateStatusIfCurrent(
+                questionSubmitId,
+                QuestionSubmitStatusEnum.RUNNING,
+                QuestionSubmitStatusEnum.SUCCEED,
+                JSONUtil.toJsonStr(judgeInfo));
+        if (!completed) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "题目状态更新错误");
         }
         return questionSubmitService.getById(questionSubmitId);
+    }
+
+    private void markFailed(long questionSubmitId) {
+        JudgeInfo judgeInfo = new JudgeInfo();
+        judgeInfo.setMessage(JudgeInfoMessageEnum.SYSTEM_ERROR.getValue());
+        try {
+            boolean updated = questionSubmitService.updateStatusIfCurrent(
+                    questionSubmitId,
+                    QuestionSubmitStatusEnum.RUNNING,
+                    QuestionSubmitStatusEnum.FAILED,
+                    JSONUtil.toJsonStr(judgeInfo));
+            if (!updated) {
+                log.warn("判题失败状态未更新，questionSubmitId={}", questionSubmitId);
+            }
+        } catch (Exception updateException) {
+            log.error("判题失败状态更新异常，questionSubmitId={}", questionSubmitId, updateException);
+        }
     }
 }

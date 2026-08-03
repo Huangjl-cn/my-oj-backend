@@ -41,3 +41,7 @@ springdoc:
 knife4j:
   setting:
     language: zh_cn
+# 远程代码沙箱公共配置
+codesandbox:
+  # 同时作为连接和读取超时，单位毫秒
+  timeout: 60000

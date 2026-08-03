@@ -1,0 +1,103 @@
+package com.hjl.oj.judge.codesandbox;
+
+import com.hjl.oj.common.ErrorCode;
+import com.hjl.oj.exception.BusinessException;
+import com.hjl.oj.judge.codesandbox.impl.RemoteCodeSandbox;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
+import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class RemoteCodeSandboxTest {
+
+    @Test
+    void nonJavaLanguageUsesTheUnifiedExecuteCodeEndpoint() throws Exception {
+        AtomicInteger requestCount = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        ExecutorService serverExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        server.setExecutor(serverExecutor);
+        server.createContext("/executeCode", exchange -> {
+            requestCount.incrementAndGet();
+            byte[] response = ("{\"outputList\":[\"1\"],\"message\":\"ok\",\"status\":1,"
+                    + "\"judgeInfo\":{\"message\":\"Accepted\",\"memory\":1,\"time\":1}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            RemoteCodeSandbox codeSandbox = new RemoteCodeSandbox();
+            ReflectionTestUtils.setField(codeSandbox, "codesandboxUrl",
+                    "http://127.0.0.1:" + server.getAddress().getPort());
+            ReflectionTestUtils.setField(codeSandbox, "timeout", 1_000);
+            ExecuteCodeRequest request = ExecuteCodeRequest.builder()
+                    .code("print(input())")
+                    .language(QuestionSubmitLanguageEnum.PYTHON.getValue())
+                    .inputList(List.of("1"))
+                    .build();
+
+            ExecuteCodeResponse response = codeSandbox.executeCode(request);
+
+            assertEquals(List.of("1"), response.getOutputList());
+            assertEquals(1, requestCount.get());
+        } finally {
+            server.stop(0);
+            serverExecutor.close();
+        }
+    }
+
+    @Test
+    void executeCodeThrowsWhenSandboxTimesOut() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        ExecutorService serverExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        server.setExecutor(serverExecutor);
+        server.createContext("/executeCode", exchange -> {
+            try {
+                Thread.sleep(500);
+                byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, response.length);
+                exchange.getResponseBody().write(response);
+            } catch (Exception ignored) {
+                // The client closes the connection after its read timeout.
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+
+        try {
+            RemoteCodeSandbox codeSandbox = new RemoteCodeSandbox();
+            ReflectionTestUtils.setField(codeSandbox, "codesandboxUrl",
+                    "http://127.0.0.1:" + server.getAddress().getPort());
+            ReflectionTestUtils.setField(codeSandbox, "timeout", 100);
+            ExecuteCodeRequest request = ExecuteCodeRequest.builder()
+                    .code("class Main {}")
+                    .language(QuestionSubmitLanguageEnum.JAVA.getValue())
+                    .inputList(List.of("1"))
+                    .build();
+
+            BusinessException exception = assertThrows(
+                    BusinessException.class,
+                    () -> codeSandbox.executeCode(request));
+
+            assertEquals(ErrorCode.API_REQUEST_ERROR.getCode(), exception.getCode());
+        } finally {
+            server.stop(0);
+            serverExecutor.close();
+        }
+    }
+}

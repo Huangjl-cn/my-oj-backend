@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-在线判题系统（Online Judge）后端。技术栈：**Spring Boot 3.5.4 + Java 21 + MyBatis-Plus 3.5.17**（spring-boot3 starter + mybatis-plus-jsqlparser 分页插件）+ Hutool 5.8.47 + Knife4j 4.4.0（OpenAPI 3 + Jakarta）。无 Spring Security，鉴权用自定义 session + AOP 切面。Redis 依赖已注释且在 `MainApplication` 中 `exclude RedisAutoConfiguration`，无需 Redis 即可启动。
+在线判题系统（Online Judge）后端。技术栈：**Spring Boot 3.5.16 + Java 21 + MyBatis-Plus 3.5.17**（spring-boot3 starter + mybatis-plus-jsqlparser 分页插件）+ Hutool 5.8.47 + Knife4j 4.4.0（OpenAPI 3 + Jakarta）。无 Spring Security，鉴权用自定义 session + AOP 切面。Redis 依赖已注释且在 `MainApplication` 中 `exclude RedisAutoConfiguration`，无需 Redis 即可启动。
 
 ## 常用命令
 
@@ -26,13 +26,13 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 
 ### 判题模块（核心，`judge/`）— 一条设计模式流水线
 
-1. **异步入口**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言/题目，落 WAITING 状态的提交记录，然后 `CompletableFuture.runAsync` 异步调判题——HTTP 请求不阻塞在判题上。
-2. **编排**：`JudgeServiceImpl.doJudge` 依次：校验提交为 WAITING → 置为 RUNNING（防重复判题）→ 调沙箱执行 → 策略判题 → 回写 SUCCEED + judgeInfo。
+1. **异步入口**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言/题目，落 WAITING 状态的提交记录，然后交给专用 Java 21 虚拟线程 `judgeExecutor` 调用 `JudgeService.processSubmission`，HTTP 请求只返回提交 ID。
+2. **编排**：`JudgeServiceImpl.processSubmission` 用条件更新原子抢占 `WAITING → RUNNING`，`runJudgePipeline` 调沙箱、构建上下文、调用 `JudgeManager.applyStrategy` 并回写结果；成功时 `RUNNING → SUCCEED`，异常时尝试 `RUNNING → FAILED`。
 3. **沙箱**（工厂 + 代理模式）：`CodeSandbox` 接口，`CodeSandboxFactory` 按 `codesandbox.type` 配置实例化，`CodeSandboxProxy` 包一层做请求/响应日志。三个实现：
-   - `RemoteCodeSandbox` — 真实调用外部沙箱 HTTP 接口，带 `auth: secretKey` 请求头；Java 走 `/executeCode`，其他语言走 `/executeCodeByAI`；URL 来自 `codesandbox.url`；
+   - `RemoteCodeSandbox` — 真实调用外部沙箱 HTTP 接口，带 `auth: secretKey` 请求头；所有语言统一走 `/executeCode`，由沙箱按语言选择执行环境；URL 来自 `codesandbox.url`；
    - `ExampleCodeSandbox` — 本地模拟，不联网；
    - `ThirdPartyCodeSandbox` — 占位骨架。
-4. **策略**（策略模式）：`JudgeStrategy` 接口 + `DefaultJudgeStrategy` / `JavaLanguageJudgeStrategy`，`JudgeManager` 按提交语言选择。策略内对比输入输出、按 `question.judgeConfig`（时间/内存限制）判超时超内存。
+4. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误、资源限制和首个失败用例比较；`JudgeManager` 用语言枚举注册表解析策略。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
 
 ### 鉴权
 
@@ -46,7 +46,8 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 - **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防前端 JS 精度丢失），返回 Long 的接口无需单独处理。
 - **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
 - 逻辑删除：全局 `isDelete` 字段（MyBatis-Plus 全局配置）。
-- 判题并发保障只有 WAITING → RUNNING 的状态流转，无分布式锁。
+- **状态与结果分离**：提交状态 `SUCCEED` 表示判题流程完成，不代表 Accepted；最终 verdict、首个错误用例或沙箱诊断在 `judgeInfo.message`。消息可能为多行文本。
+- **判题并发与失败收敛**：`updateStatusIfCurrent` 用单条条件 SQL 保证 `WAITING → RUNNING → SUCCEED|FAILED`；当前没有分布式锁或自动重试。
 
 ## 配置（`src/main/resources/`）
 
@@ -58,7 +59,7 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 
 日志由 `logback-spring.xml` 管理：dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚、留 30 天）+ ERROR 单独文件。
 
-`codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。
+`codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。`codesandbox.timeout` 位于公共配置，默认 60000 ms，同时用于 HTTP 连接和读取超时。
 
 ## Docker 部署
 
