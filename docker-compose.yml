@@ -28,7 +28,8 @@ services:
     depends_on:
       - my-oj-db
     command:
-      - "--codesandbox.url=http://172.25.66.109:8100/executeCode"
+      - "--spring.profiles.active=prod"
+      - "--codesandbox.url=http://CODESANDBOX_PROD_URL_PLACEHOLDER:8100"
       - "--codesandbox.type=remote"
     networks:
       - my-oj-network

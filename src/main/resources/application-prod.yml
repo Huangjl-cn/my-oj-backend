@@ -1,59 +1,40 @@
-# 公共配置文件
+# 生产环境配置：安全、性能优先（关闭 SQL 日志和接口文档、缩短会话、连接池调优）
 spring:
-  application:
-    name: oj
-  # session 配置
   session:
-    # 30 天过期
-    timeout: 2592000
-    # store-type: redis
-  # 数据库配置
+    timeout: 86400 # 24 小时
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://my-oj-db:3306/oj_db
     username: root
     password: MYSQL_PASSWORD_PLACEHOLDER
-  # Redis 配置
-  # redis:
-  #   database: 1
-  #   host: 127.0.0.1
-  #   port: 6379
-  #   timeout: 5000
-  #   password: *******
-  # 文件上传
-  servlet:
-    multipart:
-      # 大小限制
-      max-file-size: 10MB
+    # 连接池调优
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      max-lifetime: 1800000
 server:
-  address: 0.0.0.0
   port: 8101
   servlet:
-    context-path: /api
-    # cookie 30 天过期
     session:
+      timeout: 86400 # 会话 24 小时过期
       cookie:
-        max-age: 2592000
+        max-age: 86400 # cookie 24 小时过期
+  # 响应压缩
+  compression:
+    enabled: true
+    min-response-size: 1024
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: false
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    db-config:
-      logic-delete-field: isDelete # 全局逻辑删除的实体字段名
-      logic-delete-value: 1 # 逻辑已删除值（默认为 1）
-      logic-not-delete-value: 0 # 逻辑未删除值（默认为 0）
-# 接口文档配置
+    log-impl: '' # 生产关闭 SQL 日志（性能 + 不泄漏查询数据）
+# 彻底关闭接口文档（knife4j + springdoc），防止泄露接口结构
 springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
   api-docs:
-    path: /v3/api-docs
+    enabled: false
+  swagger-ui:
+    enabled: false
 knife4j:
   enable: false
-  setting:
-    language: zh_cn
-#代码沙箱类型选择
+# 代码沙箱
 codesandbox:
   type: remote
-  url: http://172.25.66.109:8100/executeCode
+  # 沙箱服务器内网地址（部署时可按需用 --codesandbox.url 覆盖）
+  url: http://CODESANDBOX_PROD_URL_PLACEHOLDER:8100

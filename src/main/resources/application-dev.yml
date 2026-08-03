@@ -1,0 +1,28 @@
+# 开发环境配置：本地运行，宽松优先（SQL 日志、接口文档、长会话）
+spring:
+  # 启用 spring-session-redis 后，session 超时由这里控制
+  session:
+    timeout: 2592000 # 30 天
+  datasource:
+    url: jdbc:mysql://localhost:3306/oj_db
+    username: root
+    password: MYSQL_PASSWORD_PLACEHOLDER
+server:
+  port: 8102
+  servlet:
+    session:
+      timeout: 2592000 # 会话 30 天过期（普通 servlet 会话以此为准）
+      cookie:
+        max-age: 2592000 # cookie 30 天过期
+mybatis-plus:
+  configuration:
+    # 打开 SQL 日志，方便本地调试
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+# 接口文档（Knife4j）
+knife4j:
+  enable: true
+# 代码沙箱类型选择
+codesandbox:
+  type: remote
+  # 沙箱需要 Linux 环境，指向本机 WSL
+  url: http://172.25.66.109:8100

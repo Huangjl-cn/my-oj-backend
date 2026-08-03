@@ -2,56 +2,66 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Online Judge (在线判题系统) backend: Spring Boot 2.7.2 / Java 1.8 / MyBatis-Plus 3.5.2 / MySQL / Hutool / Knife4j / Lombok. Single Maven module (`com.hjl.oj`, artifact `my-oj`). All code comments and the README are in Chinese.
+## 项目概述
 
-## Commands
+在线判题系统（Online Judge）后端。技术栈：**Spring Boot 3.5.4 + Java 21 + MyBatis-Plus 3.5.17**（spring-boot3 starter + mybatis-plus-jsqlparser 分页插件）+ Hutool 5.8.47 + Knife4j 4.4.0（OpenAPI 3 + Jakarta）。无 Spring Security，鉴权用自定义 session + AOP 切面。Redis 依赖已注释且在 `MainApplication` 中 `exclude RedisAutoConfiguration`，无需 Redis 即可启动。
 
-- Build: `./mvnw.cmd clean package` (Windows) — jar lands at `target/my-oj-0.0.1.jar`
-- Run: `java -jar target/my-oj-0.0.1.jar` (default profile is `dev`)
-- API docs (Knife4j): `http://localhost:8102/api/doc.html`
-- There is **no test directory** (`src/test` is absent); `spring-boot-starter-test` is on the classpath but nothing uses it yet.
-- Docker: `docker compose up -d` builds the backend image + MySQL 8 (`my-oj-db`, host port 3307). Note the Dockerfile expects `my-oj-0.0.1.jar` copied to the repo root before building — the jar is not produced there by default.
+## 常用命令
 
-## Configuration
+```bash
+mvn clean package          # 构建
+mvn spring-boot:run        # 本地运行，默认 dev profile，端口 8102，context-path /api
+mvn test                   # 全部测试
+mvn test -Dtest=CodeSandboxTest   # 单个测试类
+```
 
-- `application.yml` is the dev profile (port **8102**, `codesandbox.type: remote`, `codesandbox.url: http://localhost:8100`); `application-prod.yml` uses port 8101 and connects to the compose DB host `my-oj-db`. The README's "8101" is stale.
-- Redis is disabled: the spring-data-redis deps are commented out in `pom.xml` and session `store-type: redis` is commented in the yml. Sessions are in-memory HTTP sessions.
-- `codesandbox.type` switches the sandbox: `remote` | `thirdParty` | `example` (note camelCase `thirdParty`, not "thirdparty" as the README says).
-- The `codesandbox.url` points at a **separate code-sandbox service** (not in this repo) that actually compiles/runs user code in Docker.
+- 前置条件：JDK 21、Maven 3.6+。
+- 首次运行先执行 `sql/create_table.sql`：创建 `oj_db`、三张表（user / question / question_submit）、默认 admin 账号（密码 12345678）。
+- 接口文档（dev）：`http://localhost:8102/api/doc.html`（Knife4j）。
+- 测试注意：`CodeSandboxTest.executeCode` 直接 new `RemoteCodeSandbox`，外部沙箱没启动会失败；`executeCodeByValue/executeCodeByProxy` 走 `codesandbox.type` 配置（默认 example，可离线跑）。
 
-## Architecture
+## 架构
 
-Layered Spring Boot app: `controller` → `service/impl` (MyBatis-Plus `ServiceImpl` + `QueryWrapper`) → `mapper` → MySQL. `common/` holds `BaseResponse` + `ResultUtils` + `ErrorCode` + `PageRequest`; `exception/` holds `BusinessException` + `GlobalExceptionHandler` + `ThrowUtils` — services throw `BusinessException(ErrorCode.X)` and the handler renders the unified `BaseResponse` shape.
+经典分层：controller → service → mapper；`model/` 下分 entity / dto / vo / enums；`common/` 统一返回（BaseResponse + ResultUtils + ErrorCode）；`exception/` 全局异常（BusinessException + GlobalExceptionHandler）。
 
-### Judging pipeline (the core, spans multiple packages)
+### 判题模块（核心，`judge/`）— 一条设计模式流水线
 
-Submission flow, `QuestionSubmitServiceImpl.doQuestionSubmit` → `JudgeService.doJudge`:
+1. **异步入口**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言/题目，落 WAITING 状态的提交记录，然后 `CompletableFuture.runAsync` 异步调判题——HTTP 请求不阻塞在判题上。
+2. **编排**：`JudgeServiceImpl.doJudge` 依次：校验提交为 WAITING → 置为 RUNNING（防重复判题）→ 调沙箱执行 → 策略判题 → 回写 SUCCEED + judgeInfo。
+3. **沙箱**（工厂 + 代理模式）：`CodeSandbox` 接口，`CodeSandboxFactory` 按 `codesandbox.type` 配置实例化，`CodeSandboxProxy` 包一层做请求/响应日志。三个实现：
+   - `RemoteCodeSandbox` — 真实调用外部沙箱 HTTP 接口，带 `auth: secretKey` 请求头；Java 走 `/executeCode`，其他语言走 `/executeCodeByAI`；URL 来自 `codesandbox.url`；
+   - `ExampleCodeSandbox` — 本地模拟，不联网；
+   - `ThirdPartyCodeSandbox` — 占位骨架。
+4. **策略**（策略模式）：`JudgeStrategy` 接口 + `DefaultJudgeStrategy` / `JavaLanguageJudgeStrategy`，`JudgeManager` 按提交语言选择。策略内对比输入输出、按 `question.judgeConfig`（时间/内存限制）判超时超内存。
 
-1. `doQuestionSubmit` validates language/question, saves a `QuestionSubmit` with `status=WAITING`, then fires judging **asynchronously** via `CompletableFuture.runAsync` — the submit endpoint returns immediately with the submit id.
-2. `JudgeServiceImpl.doJudge(questionSubmitId)` fetches submit + question, refuses to re-judge unless status is WAITING, flips status to RUNNING, then:
-   - Builds `ExecuteCodeRequest` from the user's code + the question's `judgeCase` JSON (inputs only).
-   - Gets a `CodeSandbox` via `CodeSandboxFactory.newInstance(type)` (factory pattern), wrapped in `CodeSandboxProxy` (proxy pattern — just request/response logging).
-   - Packs results into a `JudgeContext` and delegates to `JudgeManager.doJudge`, which picks a `JudgeStrategy` by language: `JavaLanguageJudgeStrategy` vs `DefaultJudgeStrategy` (strategy pattern). Java gets a +2000ms time allowance for JVM startup.
-3. The strategy compares sandbox `JudgeInfo` (time/memory) and outputs against the question's `judgeConfig` limits and `judgeCase` expected outputs, returning a verdict (`JudgeInfoMessageEnum`: ACCEPTED / WRONG_ANSWER / COMPILE_ERROR / TIME_LIMIT_EXCEEDED / …).
-4. Final status + `judgeInfo` (JSON) are written back to the `QuestionSubmit` row.
+### 鉴权
 
-To extend: add an implementation of `CodeSandbox` and a case in `CodeSandboxFactory`; add a language by implementing `JudgeStrategy` and registering it in `JudgeManager`.
+- 登录态存 session：`UserService.getLoginUser(request)` 读 session 属性 `user_login`（`UserConstant.USER_LOGIN_STATE`），登出即删除该属性。
+- 接口权限：`@AuthCheck(mustRole = "admin")` 注解 + `AuthInterceptor` AOP 切面校验，无 Spring Security。
 
-### Sandbox implementations
+### 重要约定 / 坑
 
-- `RemoteCodeSandbox` (the real one): HTTP POST to `codesandbox.url + /executeCode` (Java) or `/executeCodeByAI` (other languages) via Hutool `HttpUtil`, with a hardcoded `auth: secretKey` header. Auth keys are hardcoded constants, not config.
-- `ExampleCodeSandbox`: fake success for wiring/testing.
-- `ThirdPartyCodeSandbox`: placeholder.
+- **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`、`/question/question_submit/get`。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
+- **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig`、`question_submit.judgeInfo` 是 text 列存 JSON 字符串；DTO 侧是 List / JudgeConfig 对象，出入库用 Hutool `JSONUtil` 转换（参考 QuestionController.addQuestion 与 JudgeServiceImpl）。
+- **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防前端 JS 精度丢失），返回 Long 的接口无需单独处理。
+- **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
+- 逻辑删除：全局 `isDelete` 字段（MyBatis-Plus 全局配置）。
+- 判题并发保障只有 WAITING → RUNNING 的状态流转，无分布式锁。
 
-### Auth
+## 配置（`src/main/resources/`）
 
-Session-based: `UserServiceImpl.userLogin` stores the `User` object in `request.getSession()` under `USER_LOGIN_STATE`; `getLoginUser(request)` reads it back. Passwords are MD5 of `SALT + password` (SALT constant is `"nelson"`). Role checks are done with the `@AuthCheck(mustRole = "admin")` annotation, enforced by the `AuthInterceptor` AOP aspect; roles are `user`/`admin`/`ban` (`UserRoleEnum`).
+公共项在 `application.yml`（默认激活 dev），环境差异拆在 profile 文件，profile 覆盖同名公共项：
 
-## Data conventions
+- `application-dev.yml`：本地运行。端口 **8102**，MySQL localhost:3306/oj_db，SQL 日志开（StdOutImpl）、Knife4j 开、session/cookie 30 天、codesandbox.url 指向 WSL 地址 172.25.66.109:8100（沙箱需要 Linux 环境）。
+- `application-prod.yml`：上线部署。端口 **8101**，MySQL `my-oj-db`（docker 网络内），SQL 日志和接口文档（knife4j + springdoc）全关、session/cookie 24 小时、HikariCP 池 10、响应压缩开、codesandbox.url 指向沙箱服务器内网地址（如 CODESANDBOX_PROD_URL_PLACEHOLDER:8100，部署时可按需覆盖）。
+- `application-test.yml`：占位配置（my_db 等），实际使用需替换。
 
-- **`map-underscore-to-camel-case: false`** — DB columns are already camelCase (`userId`, `questionId`, `isDelete`). Entities use camelCase fields matching column names exactly; never write snake_case column names.
-- Global **logic delete** on `isDelete` (0 = alive, 1 = deleted) — always pass `isDelete = false` in hand-built `QueryWrapper`s (see `getQueryWrapper` in the services).
-- JSON is stored in `text` columns: `question.judgeCase` (list of `{input, output}`), `question.judgeConfig` (`{timeLimit, memoryLimit, stackLimit}`), `question.tags` (array), `question_submit.judgeInfo`. Serialize/parse with Hutool `JSONUtil` (`JSONUtil.toJsonStr` / `JSONUtil.toList`).
-- Submit status enum (`QuestionSubmitStatusEnum`): 0-WAITING, 1-RUNNING, 2-SUCCEED, 3-FAILED.
-- `QuestionSubmitVO` desensitizes code: only the submit owner or an admin sees the code (others get `null`).
-- Schema bootstrap: `sql/create_table.sql` (creates `oj_db` + tables + seeded admin user, password `12345678`).
+日志由 `logback-spring.xml` 管理：dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚、留 30 天）+ ERROR 单独文件。
+
+`codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。
+
+## Docker 部署
+
+- `Dockerfile`：amazoncorretto:21-alpine。**构建前需先把 `target/my-oj-0.0.1.jar` 复制到项目根目录**（Dockerfile `COPY my-oj-0.0.1.jar app.jar` 从构建上下文根取 jar）。
+- `docker-compose.yml`：mysql:8（宿主机 3307）+ 后端服务，command 激活 prod profile（`--spring.profiles.active=prod`）并用 CLI 参数覆盖 codesandbox 配置（`--codesandbox.url` / `--codesandbox.type`）。
+- `nginx.conf`：反代到后端 8101。
