@@ -10,11 +10,16 @@ import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.mapper.QuestionMapper;
 import com.hjl.oj.model.dto.question.QuestionQueryRequest;
+import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
+import com.hjl.oj.model.entity.QuestionStarterCode;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
+import com.hjl.oj.model.vo.QuestionStarterCodeVO;
 import com.hjl.oj.model.vo.QuestionVO;
 import com.hjl.oj.model.vo.UserVO;
 import com.hjl.oj.service.QuestionService;
+import com.hjl.oj.service.QuestionStarterCodeService;
 import com.hjl.oj.service.UserService;
 import com.hjl.oj.utils.SqlUtils;
 import jakarta.annotation.Resource;
@@ -22,17 +27,22 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> implements QuestionService {
     @Resource
     private UserService userService;
+
+    @Resource
+    private QuestionStarterCodeService questionStarterCodeService;
 
     /**
      * 判断传入的用例参数是否合法
@@ -72,6 +82,74 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "判断用例过长");
         }
 
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public long createQuestionWithStarterCodes(Question question,
+                                               List<QuestionStarterCodeSaveRequest> starterCodeList) {
+        List<QuestionStarterCode> starterCodes = questionStarterCodeService.normalizeStarterCodes(starterCodeList);
+        boolean saved = this.save(question);
+        ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "题目保存失败");
+        questionStarterCodeService.replaceStarterCodes(question.getId(), starterCodes);
+        return question.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean updateQuestionWithStarterCodes(Question question,
+                                                  List<QuestionStarterCodeSaveRequest> starterCodeList) {
+        List<QuestionStarterCode> starterCodes = null;
+        if (starterCodeList != null) {
+            starterCodes = questionStarterCodeService.normalizeStarterCodes(starterCodeList);
+        }
+        boolean hasQuestionUpdates = ObjectUtils.anyNotNull(
+                question.getTitle(),
+                question.getContent(),
+                question.getTags(),
+                question.getAnswer(),
+                question.getJudgeConfig(),
+                question.getJudgeCase());
+        ThrowUtils.throwIf(!hasQuestionUpdates && starterCodes == null,
+                ErrorCode.PARAMS_ERROR, "没有需要更新的内容");
+        if (hasQuestionUpdates) {
+            boolean updated = this.updateById(question);
+            ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "题目更新失败");
+        }
+        if (starterCodes != null) {
+            questionStarterCodeService.replaceStarterCodes(question.getId(), starterCodes);
+        }
+        return true;
+    }
+
+    @Override
+    public QuestionStarterCodeVO getQuestionStarterCodeVO(long questionId, String language) {
+        ThrowUtils.throwIf(questionId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(QuestionSubmitLanguageEnum.getEnumByValue(language) == null,
+                ErrorCode.PARAMS_ERROR, "编程语言错误");
+        ThrowUtils.throwIf(this.getById(questionId) == null, ErrorCode.NOT_FOUND_ERROR);
+        QuestionStarterCode starterCode = questionStarterCodeService
+                .getByQuestionIdAndLanguage(questionId, language);
+        ThrowUtils.throwIf(starterCode == null, ErrorCode.NOT_FOUND_ERROR, "初始代码模板不存在");
+        return QuestionStarterCodeVO.objToVo(starterCode);
+    }
+
+    @Override
+    public List<QuestionStarterCodeVO> listQuestionStarterCodeVO(long questionId) {
+        ThrowUtils.throwIf(questionId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(this.getById(questionId) == null, ErrorCode.NOT_FOUND_ERROR);
+        Map<String, QuestionStarterCode> starterCodeMap = questionStarterCodeService.listByQuestionId(questionId)
+                .stream()
+                .collect(Collectors.toMap(QuestionStarterCode::getLanguage, Function.identity()));
+        ThrowUtils.throwIf(starterCodeMap.size() != QuestionSubmitLanguageEnum.values().length,
+                ErrorCode.NOT_FOUND_ERROR, "初始代码模板不完整");
+        return Stream.of(QuestionSubmitLanguageEnum.values())
+                .map(language -> starterCodeMap.get(language.getValue()))
+                .map(starterCode -> {
+                    ThrowUtils.throwIf(starterCode == null, ErrorCode.NOT_FOUND_ERROR, "初始代码模板不完整");
+                    return QuestionStarterCodeVO.objToVo(starterCode);
+                })
+                .collect(Collectors.toList());
     }
 
     /**

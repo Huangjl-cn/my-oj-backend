@@ -35,4 +35,9 @@ public class QuestionAddRequest implements Serializable {
      * 判题配置
      */
     private JudgeConfig judgeConfig;
+
+    /**
+     * 各语言初始代码模板
+     */
+    private List<QuestionStarterCodeSaveRequest> starterCodeList;
 }

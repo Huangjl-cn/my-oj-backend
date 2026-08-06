@@ -17,6 +17,7 @@ import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
+import com.hjl.oj.model.vo.QuestionStarterCodeVO;
 import com.hjl.oj.model.vo.QuestionVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
@@ -74,9 +75,8 @@ public class QuestionController {
         questionService.validQuestion(question, true);
         User loginUser = userService.getLoginUser(request);
         question.setUserId(loginUser.getId());
-        boolean result = questionService.save(question);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        long newQuestionId = question.getId();
+        long newQuestionId = questionService.createQuestionWithStarterCodes(question,
+                questionAddRequest.getStarterCodeList());
         return ResultUtils.success(newQuestionId);
     }
 
@@ -130,7 +130,8 @@ public class QuestionController {
         // 判断是否存在
         Question oldQuestion = questionService.getById(id);
         ThrowUtils.throwIf(oldQuestion == null, ErrorCode.NOT_FOUND_ERROR);
-        boolean result = questionService.updateById(question);
+        boolean result = questionService.updateQuestionWithStarterCodes(question,
+                questionUpdateRequest.getStarterCodeList());
         return ResultUtils.success(result);
     }
 
@@ -167,6 +168,23 @@ public class QuestionController {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
         return ResultUtils.success(questionService.getQuestionVO(question, request));
+    }
+
+    /**
+     * 获取题目指定语言的初始代码模板
+     */
+    @GetMapping("/starter-code")
+    public BaseResponse<QuestionStarterCodeVO> getQuestionStarterCode(@RequestParam long questionId,
+                                                                      @RequestParam String language) {
+        return ResultUtils.success(questionService.getQuestionStarterCodeVO(questionId, language));
+    }
+
+    /**
+     * 获取题目全部初始代码模板，用于编辑题目时回填
+     */
+    @GetMapping("/starter-code/list")
+    public BaseResponse<List<QuestionStarterCodeVO>> listQuestionStarterCode(@RequestParam long questionId) {
+        return ResultUtils.success(questionService.listQuestionStarterCodeVO(questionId));
     }
 
     /**
@@ -250,7 +268,8 @@ public class QuestionController {
         if (!oldQuestion.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
-        boolean result = questionService.updateById(question);
+        boolean result = questionService.updateQuestionWithStarterCodes(question,
+                questionEditRequest.getStarterCodeList());
         return ResultUtils.success(result);
     }
 

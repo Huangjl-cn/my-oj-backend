@@ -4,9 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.hjl.oj.model.dto.question.QuestionQueryRequest;
+import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
+import com.hjl.oj.model.vo.QuestionStarterCodeVO;
 import com.hjl.oj.model.vo.QuestionVO;
 import jakarta.servlet.http.HttpServletRequest;
+
+import java.util.List;
 
 /**
  * @author hjl15
@@ -18,6 +22,26 @@ public interface QuestionService extends IService<Question> {
      * 校验
      */
     void validQuestion(Question question, boolean add);
+
+    /**
+     * 创建题目及其初始代码模板。
+     */
+    long createQuestionWithStarterCodes(Question question, List<QuestionStarterCodeSaveRequest> starterCodeList);
+
+    /**
+     * 更新题目及其初始代码模板。
+     */
+    boolean updateQuestionWithStarterCodes(Question question, List<QuestionStarterCodeSaveRequest> starterCodeList);
+
+    /**
+     * 获取题目指定语言的初始代码模板。
+     */
+    QuestionStarterCodeVO getQuestionStarterCodeVO(long questionId, String language);
+
+    /**
+     * 获取题目全部初始代码模板。
+     */
+    List<QuestionStarterCodeVO> listQuestionStarterCodeVO(long questionId);
 
     /**
      * 获取查询条件

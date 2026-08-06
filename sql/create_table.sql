@@ -45,6 +45,18 @@ create table if not exists question
     index idx_userId (userId)
 ) comment '题目' collate = utf8mb4_unicode_ci;
 
+-- 题目多语言初始代码模板表
+create table if not exists question_starter_code
+(
+    id          bigint auto_increment comment 'id' primary key,
+    questionId  bigint                             not null comment '题目 id',
+    language    varchar(32)                        not null comment '编程语言',
+    starterCode text                               not null comment '编辑器初始代码模板',
+    createTime  datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime  datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    unique key uk_question_language (questionId, language)
+) comment '题目多语言初始代码模板' collate = utf8mb4_unicode_ci;
+
 -- 题目提交表
 create table if not exists question_submit
 (
@@ -59,5 +71,6 @@ create table if not exists question_submit
     updateTime datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
     isDelete   tinyint  default 0                 not null comment '是否删除',
     index idx_postId (questionId),
-    index idx_userId (userId)
+    index idx_userId (userId),
+    index idx_user_question_time (userId, questionId, createTime)
 ) comment '题目提交';

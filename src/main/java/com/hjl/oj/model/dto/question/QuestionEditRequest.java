@@ -39,4 +39,9 @@ public class QuestionEditRequest implements Serializable {
      * 判题配置
      */
     private JudgeConfig judgeConfig;
+
+    /**
+     * 各语言初始代码模板，未传时不修改已有模板
+     */
+    private List<QuestionStarterCodeSaveRequest> starterCodeList;
 }
