@@ -17,6 +17,7 @@ import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
@@ -138,6 +139,14 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         return queryWrapper;
     }
 
+    @Override
+    public QuestionSubmit getByIdAndUserId(long questionSubmitId, long userId) {
+        return this.lambdaQuery()
+                .eq(QuestionSubmit::getId, questionSubmitId)
+                .eq(QuestionSubmit::getUserId, userId)
+                .one();
+    }
+
     /**
      * 用于获取实体的封装类
      */
@@ -172,6 +181,17 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
                 .collect(Collectors.toList());
         questionSubmitVOPage.setRecords(questionSubmitVOList);
         return questionSubmitVOPage;
+    }
+
+    @Override
+    public Page<QuestionSubmitSummaryVO> getQuestionSubmitSummaryVOPage(Page<QuestionSubmit> questionSubmitPage) {
+        Page<QuestionSubmitSummaryVO> summaryPage = new Page<>(questionSubmitPage.getCurrent(),
+                questionSubmitPage.getSize(), questionSubmitPage.getTotal());
+        List<QuestionSubmitSummaryVO> summaryList = questionSubmitPage.getRecords().stream()
+                .map(QuestionSubmitSummaryVO::objToVo)
+                .collect(Collectors.toList());
+        summaryPage.setRecords(summaryList);
+        return summaryPage;
     }
 }
 

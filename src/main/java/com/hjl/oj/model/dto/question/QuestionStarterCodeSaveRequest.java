@@ -10,7 +10,6 @@ import java.io.Serializable;
  */
 @Data
 public class QuestionStarterCodeSaveRequest implements Serializable {
-
     @Serial
     private static final long serialVersionUID = 1L;
 

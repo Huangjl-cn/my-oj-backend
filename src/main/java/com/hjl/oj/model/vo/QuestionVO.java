@@ -6,6 +6,7 @@ import com.hjl.oj.model.entity.Question;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.List;
  */
 @Data
 public class QuestionVO implements Serializable {
+    @Serial
     private static final long serialVersionUID = 1L;
     /**
      * id

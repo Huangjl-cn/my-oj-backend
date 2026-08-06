@@ -3,6 +3,7 @@ package com.hjl.oj.model.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 
@@ -12,6 +13,7 @@ import java.util.Date;
 @TableName(value = "question")
 @Data
 public class Question implements Serializable {
+    @Serial
     @TableField(exist = false)
     private static final long serialVersionUID = 3478502196276717899L;
     /**

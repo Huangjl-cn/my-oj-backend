@@ -7,6 +7,7 @@ import com.hjl.oj.common.BaseResponse;
 import com.hjl.oj.common.DeleteRequest;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.common.ResultUtils;
+import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.constant.UserConstant;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
@@ -16,9 +17,8 @@ import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
-import com.hjl.oj.model.vo.QuestionSubmitVO;
-import com.hjl.oj.model.vo.QuestionStarterCodeVO;
-import com.hjl.oj.model.vo.QuestionVO;
+import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
+import com.hjl.oj.model.vo.*;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
@@ -29,6 +29,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * 题目接口
@@ -49,6 +50,17 @@ public class QuestionController {
     private QuestionSubmitService questionSubmitService;
 
     // region 增删改查
+
+    /**
+     * 获取后端支持的编程语言
+     */
+    @GetMapping("/supported-languages")
+    public BaseResponse<List<SupportedLanguageVO>> getSupportedLanguages() {
+        List<SupportedLanguageVO> supportedLanguages = Stream.of(QuestionSubmitLanguageEnum.values())
+                .map(language -> new SupportedLanguageVO(language.getText(), language.getValue()))
+                .toList();
+        return ResultUtils.success(supportedLanguages);
+    }
 
     /**
      * 创建
@@ -168,6 +180,26 @@ public class QuestionController {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
         return ResultUtils.success(questionService.getQuestionVO(question, request));
+    }
+
+    /**
+     * 查询题解，登录用户均可访问。
+     */
+    @GetMapping("/solution")
+    public BaseResponse<QuestionSolutionVO> getQuestionSolution(@RequestParam long questionId,
+                                                                HttpServletRequest request) {
+        if (questionId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        userService.getLoginUser(request);
+        Question question = questionService.getById(questionId);
+        if (question == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        QuestionSolutionVO solutionVO = new QuestionSolutionVO();
+        solutionVO.setQuestionId(question.getId());
+        solutionVO.setAnswer(question.getAnswer());
+        return ResultUtils.success(solutionVO);
     }
 
     /**
@@ -308,6 +340,48 @@ public class QuestionController {
         final User loginUser = userService.getLoginUser(request);
         // 返回脱敏信息
         return ResultUtils.success(questionSubmitService.getQuestionSubmitVOPage(questionSubmitPage, loginUser));
+    }
+
+    /**
+     * 分页获取当前用户在指定题目下的提交摘要
+     */
+    @PostMapping("/question_submit/my/list/page")
+    public BaseResponse<Page<QuestionSubmitSummaryVO>> listMyQuestionSubmitByPage(
+            @RequestBody QuestionSubmitQueryRequest questionSubmitQueryRequest,
+            HttpServletRequest request) {
+        if (questionSubmitQueryRequest == null
+                || questionSubmitQueryRequest.getQuestionId() == null
+                || questionSubmitQueryRequest.getQuestionId() <= 0
+                || questionSubmitQueryRequest.getCurrent() <= 0
+                || questionSubmitQueryRequest.getPageSize() <= 0
+                || questionSubmitQueryRequest.getPageSize() > 20) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        questionSubmitQueryRequest.setUserId(loginUser.getId());
+        questionSubmitQueryRequest.setSortField("createTime");
+        questionSubmitQueryRequest.setSortOrder(CommonConstant.SORT_ORDER_DESC);
+        Page<QuestionSubmit> questionSubmitPage = questionSubmitService.page(
+                new Page<>(questionSubmitQueryRequest.getCurrent(), questionSubmitQueryRequest.getPageSize()),
+                questionSubmitService.getQueryWrapper(questionSubmitQueryRequest));
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitSummaryVOPage(questionSubmitPage));
+    }
+
+    /**
+     * 获取当前用户的某次提交详情
+     */
+    @GetMapping("/question_submit/my/get")
+    public BaseResponse<QuestionSubmitVO> getMyQuestionSubmitById(@RequestParam long id,
+                                                                  HttpServletRequest request) {
+        if (id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        QuestionSubmit questionSubmit = questionSubmitService.getByIdAndUserId(id, loginUser.getId());
+        if (questionSubmit == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitVO(questionSubmit, loginUser));
     }
 
     /**
