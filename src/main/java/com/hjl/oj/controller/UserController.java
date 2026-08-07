@@ -11,7 +11,10 @@ import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.model.dto.user.*;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.UserRoleEnum;
+import com.hjl.oj.model.vo.AdminUserVO;
 import com.hjl.oj.model.vo.LoginUserVO;
+import com.hjl.oj.model.vo.UserRoleVO;
 import com.hjl.oj.model.vo.UserVO;
 import com.hjl.oj.service.UserService;
 import jakarta.annotation.Resource;
@@ -22,6 +25,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static com.hjl.oj.service.impl.UserServiceImpl.SALT;
@@ -111,6 +115,12 @@ public class UserController {
         }
         User user = new User();
         BeanUtils.copyProperties(userAddRequest, user);
+        String userRole = userAddRequest.getUserRole();
+        if (StringUtils.isBlank(userRole)) {
+            userRole = UserConstant.DEFAULT_ROLE;
+        }
+        validateUserRole(userRole);
+        user.setUserRole(userRole);
         // 默认密码 12345678
         String defaultPassword = "12345678";
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
@@ -129,6 +139,10 @@ public class UserController {
         if (deleteRequest == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+        User loginUser = userService.getLoginUser(request);
+        if (loginUser.getId().equals(deleteRequest.getId())) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "不能删除当前登录用户");
+        }
         boolean b = userService.removeById(deleteRequest.getId());
         return ResultUtils.success(b);
     }
@@ -145,6 +159,15 @@ public class UserController {
         }
         User user = new User();
         BeanUtils.copyProperties(userUpdateRequest, user);
+        if (userUpdateRequest.getUserRole() != null) {
+            validateUserRole(userUpdateRequest.getUserRole());
+        }
+        User loginUser = userService.getLoginUser(request);
+        if (loginUser.getId().equals(userUpdateRequest.getId())
+                && userUpdateRequest.getUserRole() != null
+                && !UserConstant.ADMIN_ROLE.equals(userUpdateRequest.getUserRole())) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "不能降级或封禁当前登录管理员");
+        }
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
@@ -155,13 +178,13 @@ public class UserController {
      */
     @GetMapping("/get")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<User> getUserById(long id, HttpServletRequest request) {
+    public BaseResponse<AdminUserVO> getUserById(long id, HttpServletRequest request) {
         if (id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         User user = userService.getById(id);
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
-        return ResultUtils.success(user);
+        return ResultUtils.success(AdminUserVO.objToVo(user));
     }
 
     /**
@@ -169,8 +192,11 @@ public class UserController {
      */
     @GetMapping("/get/vo")
     public BaseResponse<UserVO> getUserVOById(long id, HttpServletRequest request) {
-        BaseResponse<User> response = getUserById(id, request);
-        User user = response.getData();
+        if (id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User user = userService.getById(id);
+        ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
         return ResultUtils.success(userService.getUserVO(user));
     }
 
@@ -179,13 +205,20 @@ public class UserController {
      */
     @PostMapping("/list/page")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Page<User>> listUserByPage(@RequestBody UserQueryRequest userQueryRequest,
-                                                   HttpServletRequest request) {
+    public BaseResponse<Page<AdminUserVO>> listUserByPage(@RequestBody UserQueryRequest userQueryRequest,
+                                                          HttpServletRequest request) {
+        if (userQueryRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
         long current = userQueryRequest.getCurrent();
         long size = userQueryRequest.getPageSize();
         Page<User> userPage = userService.page(new Page<>(current, size),
                 userService.getQueryWrapper(userQueryRequest));
-        return ResultUtils.success(userPage);
+        Page<AdminUserVO> adminUserVOPage = new Page<>(current, size, userPage.getTotal());
+        adminUserVOPage.setRecords(userPage.getRecords().stream()
+                .map(AdminUserVO::objToVo)
+                .toList());
+        return ResultUtils.success(adminUserVOPage);
     }
 
     /**
@@ -227,5 +260,41 @@ public class UserController {
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
+    }
+
+    /**
+     * 获取用户角色选项（仅管理员）。
+     */
+    @GetMapping("/supported-roles")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<List<UserRoleVO>> getSupportedRoles() {
+        List<UserRoleVO> roles = Arrays.stream(UserRoleEnum.values())
+                .map(role -> new UserRoleVO(role.getText(), role.getValue()))
+                .toList();
+        return ResultUtils.success(roles);
+    }
+
+    /**
+     * 修改个人密码。
+     */
+    @PostMapping("/update/password")
+    public BaseResponse<Boolean> updateMyPassword(@RequestBody UserPasswordUpdateRequest passwordRequest,
+                                                  HttpServletRequest request) {
+        if (passwordRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        boolean result = userService.updateMyPassword(loginUser,
+                passwordRequest.getOldPassword(),
+                passwordRequest.getNewPassword(),
+                passwordRequest.getCheckPassword());
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    private void validateUserRole(String userRole) {
+        if (UserRoleEnum.getEnumByValue(userRole) == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户角色错误");
+        }
     }
 }

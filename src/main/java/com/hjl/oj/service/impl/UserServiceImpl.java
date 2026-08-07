@@ -103,6 +103,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.info("user login failed, userAccount cannot match userPassword");
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户不存在或密码错误");
         }
+        if (UserRoleEnum.BAN.getValue().equals(user.getUserRole())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "账号已被封禁");
+        }
         // 3. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, user);
         return this.getLoginUserVO(user);
@@ -124,6 +127,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         currentUser = this.getById(userId);
         if (currentUser == null) {
             throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        if (UserRoleEnum.BAN.getValue().equals(currentUser.getUserRole())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "账号已被封禁");
         }
         return currentUser;
     }
@@ -184,6 +190,28 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    public boolean updateMyPassword(User loginUser, String oldPassword, String newPassword, String checkPassword) {
+        if (StringUtils.isAnyBlank(oldPassword, newPassword, checkPassword)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码不能为空");
+        }
+        if (newPassword.length() < 8) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "新密码长度不能少于 8 位");
+        }
+        if (!newPassword.equals(checkPassword)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "两次输入的新密码不一致");
+        }
+        String oldPasswordDigest = DigestUtils.md5DigestAsHex((SALT + oldPassword).getBytes());
+        if (!oldPasswordDigest.equals(loginUser.getUserPassword())) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "原密码错误，请联系管理员重置");
+        }
+        String newPasswordDigest = DigestUtils.md5DigestAsHex((SALT + newPassword).getBytes());
+        User user = new User();
+        user.setId(loginUser.getId());
+        user.setUserPassword(newPasswordDigest);
+        return this.updateById(user);
+    }
+
+    @Override
     public UserVO getUserVO(User user) {
         if (user == null) {
             return null;
@@ -207,6 +235,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "请求参数为空");
         }
         Long id = userQueryRequest.getId();
+        String userAccount = userQueryRequest.getUserAccount();
         String unionId = userQueryRequest.getUnionId();
         String mpOpenId = userQueryRequest.getMpOpenId();
         String userName = userQueryRequest.getUserName();
@@ -216,12 +245,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         String sortOrder = userQueryRequest.getSortOrder();
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq(id != null, "id", id);
+        queryWrapper.like(StringUtils.isNotBlank(userAccount), "userAccount", userAccount);
         queryWrapper.eq(StringUtils.isNotBlank(unionId), "unionId", unionId);
         queryWrapper.eq(StringUtils.isNotBlank(mpOpenId), "mpOpenId", mpOpenId);
         queryWrapper.eq(StringUtils.isNotBlank(userRole), "userRole", userRole);
         queryWrapper.like(StringUtils.isNotBlank(userProfile), "userProfile", userProfile);
         queryWrapper.like(StringUtils.isNotBlank(userName), "userName", userName);
-        queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
+        queryWrapper.orderBy(SqlUtils.validSortField(sortField), CommonConstant.SORT_ORDER_ASC.equals(sortOrder),
                 sortField);
         return queryWrapper;
     }

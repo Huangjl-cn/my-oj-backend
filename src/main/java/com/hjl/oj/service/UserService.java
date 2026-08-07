@@ -66,6 +66,11 @@ public interface UserService extends IService<User> {
     LoginUserVO getLoginUserVO(User user);
 
     /**
+     * 修改当前用户密码。
+     */
+    boolean updateMyPassword(User loginUser, String oldPassword, String newPassword, String checkPassword);
+
+    /**
      * 获取脱敏的用户信息
      */
     UserVO getUserVO(User user);
