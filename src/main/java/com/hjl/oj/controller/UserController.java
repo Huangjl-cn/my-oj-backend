@@ -1,5 +1,6 @@
 package com.hjl.oj.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hjl.oj.annotation.AuthCheck;
 import com.hjl.oj.common.BaseResponse;
@@ -125,6 +126,19 @@ public class UserController {
         String defaultPassword = "12345678";
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
         user.setUserPassword(encryptPassword);
+        // 账号、昵称不能为空
+        String userAccount = user.getUserAccount();
+        String userName = user.getUserName();
+        if (StringUtils.isAnyBlank(userAccount, userName)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 账号不能重复
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userAccount", userAccount);
+        long count = userService.count(queryWrapper);
+        if (count > 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "新增用户账号重复");
+        }
         boolean result = userService.save(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(user.getId());

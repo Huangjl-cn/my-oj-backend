@@ -13,6 +13,7 @@ import com.hjl.oj.judge.strategy.JudgeContext;
 import com.hjl.oj.model.dto.question.JudgeCase;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
+import com.hjl.oj.model.enums.ExecuteStatusEnum;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.service.QuestionService;
@@ -101,32 +102,43 @@ public class JudgeServiceImpl implements JudgeService {
         judgeContext.setQuestionSubmit(questionSubmit);
         //根据语言属性来获取执行哪个判题策略
         JudgeInfo judgeInfo = judgeManager.applyStrategy(judgeContext);
-        // 3）仅允许仍在判题中的任务进入成功终态
-        boolean completed = questionSubmitService.updateStatusIfCurrent(
-                questionSubmitId,
-                QuestionSubmitStatusEnum.RUNNING,
-                QuestionSubmitStatusEnum.SUCCEED,
-                JSONUtil.toJsonStr(judgeInfo));
-        if (!completed) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "题目状态更新错误");
+        String judgeInfoJson = JSONUtil.toJsonStr(judgeInfo);
+        if (!isCountableExecutionStatus(executeCodeResponse.getStatus())) {
+            markFailed(questionSubmitId, judgeInfoJson);
+            return questionSubmitService.getById(questionSubmitId);
         }
-        return questionSubmitService.getById(questionSubmitId);
+        boolean accepted = JudgeInfoMessageEnum.ACCEPTED.getValue().equals(judgeInfo.getMessage());
+        return questionSubmitService.completeSubmissionAndUpdateStats(
+                questionSubmitId,
+                questionSubmit.getQuestionId(),
+                judgeInfoJson,
+                accepted);
     }
 
     private void markFailed(long questionSubmitId) {
         JudgeInfo judgeInfo = new JudgeInfo();
         judgeInfo.setMessage(JudgeInfoMessageEnum.SYSTEM_ERROR.getValue());
+        markFailed(questionSubmitId, JSONUtil.toJsonStr(judgeInfo));
+    }
+
+    private void markFailed(long questionSubmitId, String judgeInfoJson) {
         try {
             boolean updated = questionSubmitService.updateStatusIfCurrent(
                     questionSubmitId,
                     QuestionSubmitStatusEnum.RUNNING,
                     QuestionSubmitStatusEnum.FAILED,
-                    JSONUtil.toJsonStr(judgeInfo));
+                    judgeInfoJson);
             if (!updated) {
                 log.warn("判题失败状态未更新，questionSubmitId={}", questionSubmitId);
             }
         } catch (Exception updateException) {
             log.error("判题失败状态更新异常，questionSubmitId={}", questionSubmitId, updateException);
         }
+    }
+
+    private boolean isCountableExecutionStatus(Integer executeStatus) {
+        return ExecuteStatusEnum.ACCEPTED.getValue().equals(executeStatus)
+                || ExecuteStatusEnum.COMPILE_ERROR.getValue().equals(executeStatus)
+                || ExecuteStatusEnum.RUNTIME_ERROR.getValue().equals(executeStatus);
     }
 }

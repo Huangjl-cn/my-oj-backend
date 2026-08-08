@@ -34,6 +34,14 @@ public interface QuestionService extends IService<Question> {
     boolean updateQuestionWithStarterCodes(Question question, List<QuestionStarterCodeSaveRequest> starterCodeList);
 
     /**
+     * 原子更新题目的提交数和通过数。
+     *
+     * @param questionId 题目 id
+     * @param accepted   本次提交是否通过
+     */
+    boolean incrementJudgeCount(long questionId, boolean accepted);
+
+    /**
      * 获取题目指定语言的初始代码模板。
      */
     QuestionStarterCodeVO getQuestionStarterCodeVO(long questionId, String language);

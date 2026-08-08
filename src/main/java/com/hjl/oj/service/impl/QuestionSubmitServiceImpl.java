@@ -29,6 +29,9 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +59,7 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
      * 提交题目
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public long doQuestionSubmit(QuestionSubmitAddRequest questionSubmitAddRequest, User loginUser) {
         //检验编程语言是否合法
         String language = questionSubmitAddRequest.getLanguage();
@@ -83,14 +87,12 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         if (!save) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "数据插入失败");
         }
-        //执行判题服务
+        // 事务提交后再执行判题，避免异步线程读取不到刚保存的提交记录。
         Long questionSubmitId = questionSubmit.getId();
-        // 使用专用虚拟线程异步判题，异常由判题服务同步到提交状态。
-        judgeExecutor.execute(() -> {
-            try {
-                judgeService.processSubmission(questionSubmitId);
-            } catch (Exception e) {
-                log.error("判题任务执行失败，questionSubmitId={}", questionSubmitId, e);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                scheduleJudge(questionSubmitId);
             }
         });
         return questionSubmitId;
@@ -110,6 +112,38 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
             updateWrapper.set(QuestionSubmit::getJudgeInfo, judgeInfo);
         }
         return this.update(updateWrapper);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public QuestionSubmit completeSubmissionAndUpdateStats(long questionSubmitId,
+                                                           long questionId,
+                                                           String judgeInfo,
+                                                           boolean accepted) {
+        boolean completed = updateStatusIfCurrent(
+                questionSubmitId,
+                QuestionSubmitStatusEnum.RUNNING,
+                QuestionSubmitStatusEnum.SUCCEED,
+                judgeInfo);
+        if (!completed) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "题目状态更新错误");
+        }
+        boolean counted = questionService.incrementJudgeCount(questionId, accepted);
+        if (!counted) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "题目统计更新错误");
+        }
+        return getById(questionSubmitId);
+    }
+
+    private void scheduleJudge(long questionSubmitId) {
+        // 使用专用虚拟线程异步判题，异常由判题服务同步到提交状态。
+        judgeExecutor.execute(() -> {
+            try {
+                judgeService.processSubmission(questionSubmitId);
+            } catch (Exception e) {
+                log.error("判题任务执行失败，questionSubmitId={}", questionSubmitId, e);
+            }
+        });
     }
 
     /**

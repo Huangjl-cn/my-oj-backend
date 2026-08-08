@@ -27,6 +27,14 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
                                   String judgeInfo);
 
     /**
+     * 原子完成判题并更新题目统计。
+     */
+    QuestionSubmit completeSubmissionAndUpdateStats(long questionSubmitId,
+                                                    long questionId,
+                                                    String judgeInfo,
+                                                    boolean accepted);
+
+    /**
      * 获取查询条件
      */
     QueryWrapper<QuestionSubmit> getQueryWrapper(QuestionSubmitQueryRequest questionSubmitQueryRequest);

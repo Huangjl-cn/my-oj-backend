@@ -115,19 +115,19 @@ class JudgeServiceImplTest {
         JudgeInfo judgeInfo = new JudgeInfo();
         judgeInfo.setMessage(JudgeInfoMessageEnum.ACCEPTED.getValue());
         when(judgeManager.applyStrategy(any())).thenReturn(judgeInfo);
-        when(questionSubmitService.updateStatusIfCurrent(
+        when(questionSubmitService.completeSubmissionAndUpdateStats(
                 SUBMIT_ID,
-                QuestionSubmitStatusEnum.RUNNING,
-                QuestionSubmitStatusEnum.SUCCEED,
-                JSONUtil.toJsonStr(judgeInfo))).thenReturn(true);
+                questionSubmit.getQuestionId(),
+                JSONUtil.toJsonStr(judgeInfo),
+                true)).thenReturn(questionSubmit);
 
         QuestionSubmit result = judgeService.processSubmission(SUBMIT_ID);
 
         assertEquals(questionSubmit, result);
-        verify(questionSubmitService).updateStatusIfCurrent(
+        verify(questionSubmitService).completeSubmissionAndUpdateStats(
                 SUBMIT_ID,
-                QuestionSubmitStatusEnum.RUNNING,
-                QuestionSubmitStatusEnum.SUCCEED,
-                JSONUtil.toJsonStr(judgeInfo));
+                questionSubmit.getQuestionId(),
+                JSONUtil.toJsonStr(judgeInfo),
+                true);
     }
 }

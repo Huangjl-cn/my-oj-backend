@@ -2,6 +2,7 @@ package com.hjl.oj.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.hjl.oj.common.ErrorCode;
@@ -120,6 +121,20 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             questionStarterCodeService.replaceStarterCodes(question.getId(), starterCodes);
         }
         return true;
+    }
+
+    @Override
+    public boolean incrementJudgeCount(long questionId, boolean accepted) {
+        if (questionId <= 0) {
+            return false;
+        }
+        LambdaUpdateWrapper<Question> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(Question::getId, questionId)
+                .eq(Question::getIsDelete, 0)
+                .setSql(accepted
+                        ? "submitNum = submitNum + 1, acceptedNum = acceptedNum + 1, updateTime = updateTime"
+                        : "submitNum = submitNum + 1, updateTime = updateTime");
+        return this.update(updateWrapper);
     }
 
     @Override
