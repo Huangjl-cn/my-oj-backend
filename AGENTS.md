@@ -12,11 +12,11 @@ The active submission endpoints are in `QuestionController` under `/question/que
 
 1. `QuestionSubmitServiceImpl.doQuestionSubmit` validates the language and question, stores a `WAITING` submission, then schedules `JudgeService.processSubmission` on the dedicated Java 21 virtual-thread `judgeExecutor`. The HTTP response contains only the generated submission ID.
 2. `JudgeServiceImpl` atomically claims the task with `WAITING -> RUNNING`; a conditional update prevents duplicate execution. It then runs the sandbox and result pipeline.
-3. `CodeSandboxFactory` selects `remote`, `example`, or `thirdParty`. `CodeSandboxProxy` adds logging. The remote adapter sends every supported language to `/executeCode` with a configurable HTTP timeout; language-specific Docker selection belongs to the sandbox service.
-4. `JudgeManager.applyStrategy` resolves an enum-keyed strategy, then `JudgeStrategy.evaluate` produces `JudgeInfo`. `AbstractJudgeStrategy` owns execution-error, resource-limit, and first-failed-output checks; language strategies only supply justified resource allowances.
+3. `JudgeServiceImpl` validates structured judge cases and encodes each case as `cases[].args[]`. `CodeSandboxFactory` selects `remote`, `example`, or `thirdParty`; `CodeSandboxProxy` adds logging. The remote adapter sends every supported language to `/executeCode`, while the sandbox only compiles and executes the exact argument vectors.
+4. `JudgeManager.applyStrategy` resolves an enum-keyed language strategy. `AbstractJudgeStrategy` owns execution-error and resource-limit checks, language strategies only supply justified resource allowances, and the shared `JudgeOutputComparator` parses JSON output and compares typed values.
 5. A completed pipeline conditionally changes `RUNNING -> SUCCEED`; an exception attempts `RUNNING -> FAILED`. `SUCCEED` means judging completed, not Accepted. The verdict, first wrong case, or sandbox diagnostic is carried in `judgeInfo.message`.
 
-Keep `WAITING -> RUNNING -> SUCCEED|FAILED` and the sandbox boundary explicit. Any concurrency, retry, or failure-handling change must test duplicate execution and terminal states. Question fields `tags`, `judgeCase`, and `judgeConfig`, plus submission `judgeInfo`, are JSON stored in text columns; use the existing Hutool `JSONUtil` conversions.
+Keep `WAITING -> RUNNING -> SUCCEED|FAILED` and the sandbox boundary explicit. Any concurrency, retry, or failure-handling change must test duplicate execution and terminal states. Question fields `tags`, `judgeCase`, and `judgeConfig`, plus submission `judgeInfo`, are JSON stored in text columns. Structured `judgeCase` values use `JudgeCaseDataService`; preserve the existing conversions for the other fields.
 
 ## Build, Test, and Development Commands
 

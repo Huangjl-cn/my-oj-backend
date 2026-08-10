@@ -1,6 +1,9 @@
 package com.hjl.oj.model.dto.question;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 题目用例
@@ -8,11 +11,12 @@ import lombok.Data;
 @Data
 public class JudgeCase {
     /**
-     * 输入用例
+     * 输入参数，顺序与题目的 inputDefinitions 一致。
      */
-    private String input;
+    private List<JsonNode> inputs;
+
     /**
-     * 输出用例
+     * 预期输出。
      */
-    private String output;
+    private JsonNode expectedOutput;
 }

@@ -3,6 +3,7 @@ package com.hjl.oj.judge.codesandbox;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.impl.RemoteCodeSandbox;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
@@ -16,20 +17,25 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RemoteCodeSandboxTest {
 
     @Test
     void nonJavaLanguageUsesTheUnifiedExecuteCodeEndpoint() throws Exception {
         AtomicInteger requestCount = new AtomicInteger();
+        AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService serverExecutor = Executors.newVirtualThreadPerTaskExecutor();
         server.setExecutor(serverExecutor);
         server.createContext("/executeCode", exchange -> {
             requestCount.incrementAndGet();
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = ("{\"outputList\":[\"1\"],\"message\":\"ok\",\"status\":1,"
                     + "\"judgeInfo\":{\"message\":\"Accepted\",\"memory\":1,\"time\":1}}")
                     .getBytes(StandardCharsets.UTF_8);
@@ -47,13 +53,15 @@ class RemoteCodeSandboxTest {
             ExecuteCodeRequest request = ExecuteCodeRequest.builder()
                     .code("print(input())")
                     .language(QuestionSubmitLanguageEnum.PYTHON.getValue())
-                    .inputList(List.of("1"))
+                    .cases(List.of(ExecuteCaseRequest.builder().args(List.of("1")).build()))
                     .build();
 
             ExecuteCodeResponse response = codeSandbox.executeCode(request);
 
             assertEquals(List.of("1"), response.getOutputList());
             assertEquals(1, requestCount.get());
+            assertTrue(requestBody.get().contains("\"cases\":[{\"args\":[\"1\"]}]"));
+            assertFalse(requestBody.get().contains("inputList"));
         } finally {
             server.stop(0);
             serverExecutor.close();
@@ -87,7 +95,7 @@ class RemoteCodeSandboxTest {
             ExecuteCodeRequest request = ExecuteCodeRequest.builder()
                     .code("class Main {}")
                     .language(QuestionSubmitLanguageEnum.JAVA.getValue())
-                    .inputList(List.of("1"))
+                    .cases(List.of(ExecuteCaseRequest.builder().args(List.of("1")).build()))
                     .build();
 
             BusinessException exception = assertThrows(

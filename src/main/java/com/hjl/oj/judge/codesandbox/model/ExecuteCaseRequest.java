@@ -7,15 +7,14 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * 一次程序运行使用的独立参数列表。
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ExecuteCodeRequest {
+public class ExecuteCaseRequest {
 
-    private List<ExecuteCaseRequest> cases;
-
-    private String code;
-
-    private String language;
+    private List<String> args;
 }

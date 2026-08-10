@@ -1,6 +1,7 @@
 package com.hjl.oj.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.QuestionStarterCode;
 
@@ -12,9 +13,13 @@ import java.util.List;
 public interface QuestionStarterCodeService extends IService<QuestionStarterCode> {
 
     /**
-     * 校验并补全各语言模板。
+     * 根据题目判题配置校验并补全各语言模板。
+     *
+     * @param starterCodeList 前端提交的模板；空模板使用结构化配置生成
+     * @param judgeCaseConfig 题目的输入、输出定义
      */
-    List<QuestionStarterCode> normalizeStarterCodes(List<QuestionStarterCodeSaveRequest> starterCodeList);
+    List<QuestionStarterCode> normalizeStarterCodes(List<QuestionStarterCodeSaveRequest> starterCodeList,
+                                                    JudgeCaseConfig judgeCaseConfig);
 
     /**
      * 替换某道题的全部模板。

@@ -32,7 +32,8 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
    - `RemoteCodeSandbox` — 真实调用外部沙箱 HTTP 接口，带 `auth: secretKey` 请求头；所有语言统一走 `/executeCode`，由沙箱按语言选择执行环境；URL 来自 `codesandbox.url`；
    - `ExampleCodeSandbox` — 本地模拟，不联网；
    - `ThirdPartyCodeSandbox` — 占位骨架。
-4. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误、资源限制和首个失败用例比较；`JudgeManager` 用语言枚举注册表解析策略。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
+4. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误和资源限制；`JudgeManager` 用语言枚举注册表解析策略，再由共享的 `JudgeOutputComparator` 解析模板输出的 JSON 并按声明类型比较。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
+5. **结构化用例**：题目 `judgeCase` 保存参数定义、输出定义和结构化用例。`JudgeInputEncoder` 将每条用例编码为 `cases[].args[]`，代码沙箱只原样传递独立参数并返回 stdout，不理解 OJ 值类型或预期答案。
 
 ### 鉴权
 
@@ -42,7 +43,7 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 ### 重要约定 / 坑
 
 - **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`、`/question/question_submit/get`。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
-- **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig`、`question_submit.judgeInfo` 是 text 列存 JSON 字符串；DTO 侧是 List / JudgeConfig 对象，出入库用 Hutool `JSONUtil` 转换（参考 QuestionController.addQuestion 与 JudgeServiceImpl）。
+- **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig`、`question_submit.judgeInfo` 是 text 列存 JSON 字符串；结构化 `judgeCase` 统一通过 `JudgeCaseDataService` 校验和转换，其他字段沿用 Hutool `JSONUtil`。
 - **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防前端 JS 精度丢失），返回 Long 的接口无需单独处理。
 - **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
 - 逻辑删除：全局 `isDelete` 字段（MyBatis-Plus 全局配置）。

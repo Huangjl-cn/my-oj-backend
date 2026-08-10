@@ -152,7 +152,8 @@ codesandbox:
 判题模块是系统的核心，负责执行用户提交的代码并进行判题。采用设计模式组合：
 
 - **代码沙箱**：`CodeSandbox` 接口 + `CodeSandboxFactory` 工厂（按配置创建实例）+ `CodeSandboxProxy` 代理（日志拓展）
-- **判题策略**：`AbstractJudgeStrategy.evaluate` 用模板方法统一判题流程，`JudgeManager.applyStrategy` 按语言选择策略；C++ 使用基准限制，Go、Java、Python 和 JavaScript 分别补偿运行时资源开销
+- **判题策略**：`AbstractJudgeStrategy.evaluate` 统一执行错误和资源限制，`JudgeManager.applyStrategy` 按语言选择资源策略，`JudgeOutputComparator` 对模板输出的 JSON 做类型化比较
+- **结构化用例**：题目保存输入参数定义、输出类型和结构化测试值；后端编码为 `cases[].args[]`，代码沙箱只负责原始编译执行
 - **判题编排**：`JudgeServiceImpl.processSubmission` 原子抢占待判题提交，执行沙箱与策略流水线，并将任务收敛到成功或失败终态
 - **异步判题**：提交后通过专用 Java 21 虚拟线程执行器异步判题，不阻塞 HTTP 请求
 - **结果语义**：提交状态“成功”表示判题流程完成，最终 verdict、首个失败用例或沙箱错误堆栈保存在 `judgeInfo.message`

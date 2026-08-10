@@ -1,14 +1,14 @@
-package com.hjl.oj.judge.strategy;
+package com.hjl.oj.judge.strategy.impl;
 
 import cn.hutool.json.JSONUtil;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
-import com.hjl.oj.model.dto.question.JudgeCase;
+import com.hjl.oj.judge.strategy.JudgeStrategy;
+import com.hjl.oj.judge.strategy.model.JudgeContext;
 import com.hjl.oj.model.dto.question.JudgeConfig;
 import com.hjl.oj.model.enums.ExecuteStatusEnum;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -16,8 +16,6 @@ import java.util.Optional;
  * 判题流程模板，语言策略只覆盖确有差异的规则。
  */
 public abstract class AbstractJudgeStrategy implements JudgeStrategy {
-
-    private static final String NO_OUTPUT = "<无输出>";
 
     @Override
     public final JudgeInfo evaluate(JudgeContext judgeContext) {
@@ -46,7 +44,8 @@ public abstract class AbstractJudgeStrategy implements JudgeStrategy {
             return result;
         }
 
-        return compareOutput(judgeContext, result);
+        result.setMessage(JudgeInfoMessageEnum.ACCEPTED.getValue());
+        return result;
     }
 
     /**
@@ -76,37 +75,4 @@ public abstract class AbstractJudgeStrategy implements JudgeStrategy {
         return null;
     }
 
-    private JudgeInfo compareOutput(JudgeContext judgeContext, JudgeInfo result) {
-        List<JudgeCase> judgeCases = judgeContext.getJudgeCaseList();
-        List<String> outputList = Optional.ofNullable(judgeContext.getOutputList()).orElse(List.of());
-        int comparableSize = Math.min(judgeCases.size(), outputList.size());
-        for (int i = 0; i < comparableSize; i++) {
-            JudgeCase judgeCase = judgeCases.get(i);
-            if (!Objects.equals(judgeCase.getOutput(), outputList.get(i))) {
-                result.setMessage(wrongAnswerMessage(i, judgeCase, outputList.get(i)));
-                return result;
-            }
-        }
-
-        if (outputList.size() < judgeCases.size()) {
-            int failedIndex = outputList.size();
-            result.setMessage(wrongAnswerMessage(failedIndex, judgeCases.get(failedIndex), NO_OUTPUT));
-            return result;
-        }
-        if (outputList.size() > judgeCases.size()) {
-            result.setMessage("Wrong Answer\n预期输出数量: " + judgeCases.size()
-                    + "\n实际输出数量: " + outputList.size());
-            return result;
-        }
-
-        result.setMessage(JudgeInfoMessageEnum.ACCEPTED.getValue());
-        return result;
-    }
-
-    private String wrongAnswerMessage(int index, JudgeCase judgeCase, String actualOutput) {
-        return "Wrong Answer\n用例: " + (index + 1)
-                + "\n输入:\n" + judgeCase.getInput()
-                + "\n预期输出:\n" + judgeCase.getOutput()
-                + "\n实际输出:\n" + actualOutput;
-    }
 }

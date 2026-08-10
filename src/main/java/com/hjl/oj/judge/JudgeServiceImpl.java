@@ -9,13 +9,14 @@ import com.hjl.oj.judge.codesandbox.CodeSandboxProxy;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
-import com.hjl.oj.judge.strategy.JudgeContext;
-import com.hjl.oj.model.dto.question.JudgeCase;
+import com.hjl.oj.judge.strategy.model.JudgeContext;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.enums.ExecuteStatusEnum;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.service.JudgeCaseDataService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import jakarta.annotation.Resource;
@@ -24,7 +25,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -38,6 +38,12 @@ public class JudgeServiceImpl implements JudgeService {
 
     @Resource
     private JudgeManager judgeManager;
+
+    @Resource
+    private JudgeCaseDataService judgeCaseDataService;
+
+    @Resource
+    private JudgeInputEncoder judgeInputEncoder;
 
     @Value("${codesandbox.type:example}")
     private String type;
@@ -81,12 +87,12 @@ public class JudgeServiceImpl implements JudgeService {
         String language = questionSubmit.getLanguage();
         String code = questionSubmit.getCode();
         String judgeCaseStr = question.getJudgeCase();
-        List<JudgeCase> judgeCaseList = JSONUtil.toList(judgeCaseStr, JudgeCase.class);
-        List<String> inputList = judgeCaseList.stream().map(JudgeCase::getInput).collect(Collectors.toList());//获取判题用例中的输入用例
+        JudgeCaseConfig judgeCaseConfig = judgeCaseDataService.deserialize(judgeCaseStr);
+        judgeCaseDataService.validate(judgeCaseConfig);
         ExecuteCodeRequest executeCodeRequest = ExecuteCodeRequest.builder()
                 .code(code)
                 .language(language)
-                .inputList(inputList)
+                .cases(judgeInputEncoder.encode(judgeCaseConfig))
                 .build();
         //调用代码沙箱执行代码，获取结果
         ExecuteCodeResponse executeCodeResponse = codeSandbox.executeCode(executeCodeRequest);
@@ -95,9 +101,8 @@ public class JudgeServiceImpl implements JudgeService {
         // 执行状态码
         judgeContext.setExecuteStatus(executeCodeResponse.getStatus());
         judgeContext.setJudgeInfo(executeCodeResponse.getJudgeInfo());
-        judgeContext.setInputList(inputList);
         judgeContext.setOutputList(outputList);
-        judgeContext.setJudgeCaseList(judgeCaseList);
+        judgeContext.setJudgeCaseConfig(judgeCaseConfig);
         judgeContext.setQuestion(question);
         judgeContext.setQuestionSubmit(questionSubmit);
         //根据语言属性来获取执行哪个判题策略

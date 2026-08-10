@@ -318,7 +318,7 @@ Java 使用“C++ 内存限制 + 64 MiB”的现有策略是合理且偏宽松�
 - 编译硬上限：10 秒。
 - 每个运行用例硬上限：8 秒。
 - 请求总上限：已删除。
-- 用例执行方式：按 `inputList` 顺序串行。
+- 用例执行方式：按 `cases` 顺序串行，每条用例使用独立的 `args` 参数数组。
 - 返回时间：所有已执行用例中单用例运行时间最大值。
 - 返回内存：所有已执行用例中单用例原始 cgroup 峰值最大值。
 - 超时状态：按约定继续返回 `Runtime Error`，诊断为 `Execution timed out after 8000 ms`。
@@ -379,6 +379,6 @@ RUN_DOCKER_TESTS=true mvn -q -Dtest=DockerSandboxIntegrationTest test
 - cgroup 数据会随内核、Docker、镜像和语言版本变化。升级上述组件后应重跑本文基准。
 - cgroup 峰值包含容器内 PID 1、用户进程树和该 cgroup 计账的内存页，但不包含宿主 Docker daemon 的全部内存。
 - Docker stats 兜底仍是采样值；生产环境应确认 cgroup 峰值文件可读，并监控读取失败日志。
-- 当前用例是串行执行，不能据此推断并行吞吐量。
+- 当前用例按 `cases` 顺序串行执行，不能据此推断并行吞吐量。
 - 512 MiB 是容器安全硬限制，不等同于所有题目的题面内存限制。
 - 沙箱仍按约定把硬超时归类为 `Runtime Error`；调用方若需要展示 TLE，应根据题目时间限制和 `JudgeInfo` 转换用户可见判题结果。

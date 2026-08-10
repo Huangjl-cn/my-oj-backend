@@ -1,5 +1,6 @@
-package com.hjl.oj.judge.strategy;
+package com.hjl.oj.judge.strategy.impl;
 
+import com.hjl.oj.judge.strategy.LanguageJudgeStrategy;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import org.springframework.stereotype.Component;
 

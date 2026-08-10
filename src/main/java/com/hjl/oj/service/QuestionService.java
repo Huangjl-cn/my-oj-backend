@@ -3,6 +3,7 @@ package com.hjl.oj.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.dto.question.QuestionQueryRequest;
 import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
@@ -26,12 +27,16 @@ public interface QuestionService extends IService<Question> {
     /**
      * 创建题目及其初始代码模板。
      */
-    long createQuestionWithStarterCodes(Question question, List<QuestionStarterCodeSaveRequest> starterCodeList);
+    long createQuestionWithStarterCodes(Question question,
+                                        List<QuestionStarterCodeSaveRequest> starterCodeList,
+                                        JudgeCaseConfig judgeCaseConfig);
 
     /**
      * 更新题目及其初始代码模板。
      */
-    boolean updateQuestionWithStarterCodes(Question question, List<QuestionStarterCodeSaveRequest> starterCodeList);
+    boolean updateQuestionWithStarterCodes(Question question,
+                                           List<QuestionStarterCodeSaveRequest> starterCodeList,
+                                           JudgeCaseConfig judgeCaseConfig);
 
     /**
      * 原子更新题目的提交数和通过数。

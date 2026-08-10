@@ -1,6 +1,7 @@
 package com.hjl.oj.judge.codesandbox.impl;
 
 import com.hjl.oj.judge.codesandbox.CodeSandbox;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
@@ -17,10 +18,13 @@ import java.util.List;
 public class ExampleCodeSandbox implements CodeSandbox {
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
-        List<String> inputList = executeCodeRequest.getInputList();
+        List<String> outputList = executeCodeRequest.getCases().stream()
+                .map(ExecuteCaseRequest::getArgs)
+                .map(args -> args.isEmpty() ? "" : args.getFirst())
+                .toList();
         //只是填写返回值，为了跑通逻辑
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
-        executeCodeResponse.setOutputList(inputList);
+        executeCodeResponse.setOutputList(outputList);
         executeCodeResponse.setMessage("测试执行成功");
         executeCodeResponse.setStatus(ExecuteStatusEnum.ACCEPTED.getValue());
         JudgeInfo judgeInfo = new JudgeInfo();

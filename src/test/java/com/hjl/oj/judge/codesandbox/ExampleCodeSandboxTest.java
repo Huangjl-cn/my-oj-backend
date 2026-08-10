@@ -1,6 +1,7 @@
 package com.hjl.oj.judge.codesandbox;
 
 import com.hjl.oj.judge.codesandbox.impl.ExampleCodeSandbox;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.model.enums.ExecuteStatusEnum;
@@ -17,7 +18,7 @@ class ExampleCodeSandboxTest {
         ExecuteCodeRequest request = ExecuteCodeRequest.builder()
                 .code("class Main {}")
                 .language("java")
-                .inputList(List.of("1"))
+                .cases(List.of(ExecuteCaseRequest.builder().args(List.of("1")).build()))
                 .build();
 
         ExecuteCodeResponse response = new ExampleCodeSandbox().executeCode(request);

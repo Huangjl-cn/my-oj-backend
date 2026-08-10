@@ -1,4 +1,4 @@
-package com.hjl.oj.judge.strategy;
+package com.hjl.oj.judge.strategy.impl;
 
 import org.springframework.stereotype.Component;
 

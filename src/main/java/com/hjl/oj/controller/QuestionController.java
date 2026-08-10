@@ -17,8 +17,10 @@ import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.JudgeValueTypeEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.vo.*;
+import com.hjl.oj.service.JudgeCaseDataService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
@@ -49,6 +51,9 @@ public class QuestionController {
     @Resource
     private QuestionSubmitService questionSubmitService;
 
+    @Resource
+    private JudgeCaseDataService judgeCaseDataService;
+
     // region 增删改查
 
     /**
@@ -60,6 +65,23 @@ public class QuestionController {
                 .map(language -> new SupportedLanguageVO(language.getText(), language.getValue()))
                 .toList();
         return ResultUtils.success(supportedLanguages);
+    }
+
+    /**
+     * 获取后端支持的判题值类型
+     */
+    @GetMapping("/supported-judge-types")  // HTTP GET请求映射，用于获取支持的判题类型
+    public BaseResponse<List<SupportedJudgeTypeVO>> getSupportedJudgeTypes() {  // 方法声明，返回支持的判题类型列表的响应
+        // 使用Stream API处理JudgeValueTypeEnum的所有枚举值，将其转换为SupportedJudgeTypeVO对象列表
+        List<SupportedJudgeTypeVO> supportedJudgeTypes = Stream.of(JudgeValueTypeEnum.values())
+                .map(type -> new SupportedJudgeTypeVO(  // 将枚举值映射为SupportedJudgeTypeVO对象
+                        type.getValue(),      // 获取枚举值
+                        type.getText(),       // 获取枚举文本描述
+                        type.getCategory(),   // 获取枚举类别
+                        type.getDimensions(), // 获取枚举维度
+                        type.getElementType())) // 获取枚举元素类型
+                .toList();  // 将流转换为列表
+        return ResultUtils.success(supportedJudgeTypes);
     }
 
     /**
@@ -76,9 +98,9 @@ public class QuestionController {
         if (tags != null) {
             question.setTags(JSONUtil.toJsonStr(tags));
         }
-        List<JudgeCase> judgeCase = questionAddRequest.getJudgeCase();
+        JudgeCaseConfig judgeCase = questionAddRequest.getJudgeCase();
         if (judgeCase != null) {
-            question.setJudgeCase(JSONUtil.toJsonStr(judgeCase));
+            question.setJudgeCase(judgeCaseDataService.validateAndSerialize(judgeCase));
         }
         JudgeConfig judgeConfig = questionAddRequest.getJudgeConfig();
         if (judgeConfig != null) {
@@ -88,7 +110,7 @@ public class QuestionController {
         User loginUser = userService.getLoginUser(request);
         question.setUserId(loginUser.getId());
         long newQuestionId = questionService.createQuestionWithStarterCodes(question,
-                questionAddRequest.getStarterCodeList());
+                questionAddRequest.getStarterCodeList(), judgeCase);
         return ResultUtils.success(newQuestionId);
     }
 
@@ -128,9 +150,9 @@ public class QuestionController {
         if (tags != null) {
             question.setTags(JSONUtil.toJsonStr(tags));
         }
-        List<JudgeCase> judgeCase = questionUpdateRequest.getJudgeCase();
+        JudgeCaseConfig judgeCase = questionUpdateRequest.getJudgeCase();
         if (judgeCase != null) {
-            question.setJudgeCase(JSONUtil.toJsonStr(judgeCase));
+            question.setJudgeCase(judgeCaseDataService.validateAndSerialize(judgeCase));
         }
         JudgeConfig judgeConfig = questionUpdateRequest.getJudgeConfig();
         if (judgeConfig != null) {
@@ -143,7 +165,7 @@ public class QuestionController {
         Question oldQuestion = questionService.getById(id);
         ThrowUtils.throwIf(oldQuestion == null, ErrorCode.NOT_FOUND_ERROR);
         boolean result = questionService.updateQuestionWithStarterCodes(question,
-                questionUpdateRequest.getStarterCodeList());
+                questionUpdateRequest.getStarterCodeList(), judgeCase);
         return ResultUtils.success(result);
     }
 
@@ -151,7 +173,7 @@ public class QuestionController {
      * 根据 id 获取
      */
     @GetMapping("/get")
-    public BaseResponse<Question> getQuestionById(long id, HttpServletRequest request) {
+    public BaseResponse<QuestionManageVO> getQuestionById(long id, HttpServletRequest request) {
         if (id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -164,7 +186,12 @@ public class QuestionController {
         if (!question.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
-        return ResultUtils.success(question);
+        QuestionManageVO questionManageVO = new QuestionManageVO();
+        BeanUtils.copyProperties(question, questionManageVO);
+        questionManageVO.setTags(JSONUtil.toList(question.getTags(), String.class));
+        questionManageVO.setJudgeConfig(JSONUtil.toBean(question.getJudgeConfig(), JudgeConfig.class));
+        questionManageVO.setJudgeCase(judgeCaseDataService.deserialize(question.getJudgeCase()));
+        return ResultUtils.success(questionManageVO);
     }
 
     /**
@@ -281,9 +308,9 @@ public class QuestionController {
         if (tags != null) {
             question.setTags(JSONUtil.toJsonStr(tags));
         }
-        List<JudgeCase> judgeCase = questionEditRequest.getJudgeCase();
+        JudgeCaseConfig judgeCase = questionEditRequest.getJudgeCase();
         if (judgeCase != null) {
-            question.setJudgeCase(JSONUtil.toJsonStr(judgeCase));
+            question.setJudgeCase(judgeCaseDataService.validateAndSerialize(judgeCase));
         }
         JudgeConfig judgeConfig = questionEditRequest.getJudgeConfig();
         if (judgeConfig != null) {
@@ -301,7 +328,7 @@ public class QuestionController {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
         boolean result = questionService.updateQuestionWithStarterCodes(question,
-                questionEditRequest.getStarterCodeList());
+                questionEditRequest.getStarterCodeList(), judgeCase);
         return ResultUtils.success(result);
     }
 
@@ -403,6 +430,4 @@ public class QuestionController {
         }
         return ResultUtils.success(questionSubmit);
     }
-
-
 }

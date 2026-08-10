@@ -10,6 +10,7 @@ import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.mapper.QuestionMapper;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.dto.question.QuestionQueryRequest;
 import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
@@ -65,6 +66,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         // 创建时，参数不能为空
         if (add) {
             ThrowUtils.throwIf(StringUtils.isAnyBlank(title, content, tags), ErrorCode.PARAMS_ERROR);
+            ThrowUtils.throwIf(StringUtils.isBlank(judgeCase),
+                    ErrorCode.PARAMS_ERROR, "判题用例不能为空");
         }
         // 有参数则校验
         if (StringUtils.isNotBlank(title) && title.length() > 80) {
@@ -82,14 +85,15 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
         if (StringUtils.isNotBlank(judgeCase) && judgeCase.length() > 8192) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "判断用例过长");
         }
-
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public long createQuestionWithStarterCodes(Question question,
-                                               List<QuestionStarterCodeSaveRequest> starterCodeList) {
-        List<QuestionStarterCode> starterCodes = questionStarterCodeService.normalizeStarterCodes(starterCodeList);
+                                               List<QuestionStarterCodeSaveRequest> starterCodeList,
+                                               JudgeCaseConfig judgeCaseConfig) {
+        List<QuestionStarterCode> starterCodes = questionStarterCodeService
+                .normalizeStarterCodes(starterCodeList, judgeCaseConfig);
         boolean saved = this.save(question);
         ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "题目保存失败");
         questionStarterCodeService.replaceStarterCodes(question.getId(), starterCodes);
@@ -99,10 +103,11 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean updateQuestionWithStarterCodes(Question question,
-                                                  List<QuestionStarterCodeSaveRequest> starterCodeList) {
+                                                  List<QuestionStarterCodeSaveRequest> starterCodeList,
+                                                  JudgeCaseConfig judgeCaseConfig) {
         List<QuestionStarterCode> starterCodes = null;
         if (starterCodeList != null) {
-            starterCodes = questionStarterCodeService.normalizeStarterCodes(starterCodeList);
+            starterCodes = questionStarterCodeService.normalizeStarterCodes(starterCodeList, judgeCaseConfig);
         }
         boolean hasQuestionUpdates = ObjectUtils.anyNotNull(
                 question.getTitle(),

@@ -32,7 +32,7 @@ public class QuestionAddRequest implements Serializable {
     /**
      * 判题用例
      */
-    private List<JudgeCase> judgeCase;
+    private JudgeCaseConfig judgeCase;
     /**
      * 判题配置
      */

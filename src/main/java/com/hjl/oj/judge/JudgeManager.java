@@ -3,11 +3,13 @@ package com.hjl.oj.judge;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
-import com.hjl.oj.judge.strategy.DefaultJudgeStrategy;
-import com.hjl.oj.judge.strategy.JudgeContext;
 import com.hjl.oj.judge.strategy.JudgeStrategy;
 import com.hjl.oj.judge.strategy.LanguageJudgeStrategy;
+import com.hjl.oj.judge.strategy.comparator.JudgeOutputComparator;
+import com.hjl.oj.judge.strategy.impl.DefaultJudgeStrategy;
+import com.hjl.oj.judge.strategy.model.JudgeContext;
 import com.hjl.oj.model.entity.QuestionSubmit;
+import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import org.springframework.stereotype.Service;
 
@@ -28,11 +30,14 @@ public class JudgeManager {
      */
     private final Map<QuestionSubmitLanguageEnum, JudgeStrategy> strategyRegistry;
 
+    private final JudgeOutputComparator outputComparator;
+
     /**
      * 唯一构造器，Spring 自动注入（无需 @Autowired）。
-     * 两个参数：
+     * 三个参数：
      * - defaultStrategy：默认策略 Bean（兜底所有语言）
      * - languageStrategies：容器里所有特化策略 Bean 的集合（如 Java 专用策略）
+     * - outputComparator：所有语言共用的结构化输出比较器
      * <p>
      * 注册过程分两步：
      * 1. 先把所有语言都指向默认策略（铺底）；
@@ -40,7 +45,9 @@ public class JudgeManager {
      * 若两个特化策略声明了同一语言，启动时直接抛异常（fail-fast）。
      */
     public JudgeManager(DefaultJudgeStrategy defaultStrategy,
-                        List<LanguageJudgeStrategy> languageStrategies) {
+                        List<LanguageJudgeStrategy> languageStrategies,
+                        JudgeOutputComparator outputComparator) {
+        this.outputComparator = outputComparator;
         strategyRegistry = new EnumMap<>(QuestionSubmitLanguageEnum.class);
         // 第一步：所有语言默认都用默认策略
         for (QuestionSubmitLanguageEnum language : QuestionSubmitLanguageEnum.values()) {
@@ -68,7 +75,11 @@ public class JudgeManager {
         if (language == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "不支持的编程语言");
         }
-        return resolveStrategy(language).evaluate(judgeContext);
+        JudgeInfo judgeInfo = resolveStrategy(language).evaluate(judgeContext);
+        if (!JudgeInfoMessageEnum.ACCEPTED.getValue().equals(judgeInfo.getMessage())) {
+            return judgeInfo;
+        }
+        return outputComparator.compare(judgeContext, judgeInfo);
     }
 
     /**

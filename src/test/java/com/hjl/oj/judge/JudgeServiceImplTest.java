@@ -2,13 +2,16 @@ package com.hjl.oj.judge;
 
 import cn.hutool.json.JSONUtil;
 import com.hjl.oj.exception.BusinessException;
+import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
+import com.hjl.oj.service.JudgeCaseDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +19,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,6 +44,12 @@ class JudgeServiceImplTest {
 
     @Mock
     private JudgeManager judgeManager;
+
+    @Mock
+    private JudgeCaseDataService judgeCaseDataService;
+
+    @Mock
+    private JudgeInputEncoder judgeInputEncoder;
 
     @InjectMocks
     private JudgeServiceImpl judgeService;
@@ -75,7 +86,8 @@ class JudgeServiceImplTest {
     void doJudgeMarksSubmissionFailedWhenJudgingThrows() {
         Question question = new Question();
         question.setId(2L);
-        question.setJudgeCase("[{\"input\":\"1\",\"output\":\"1\"}]");
+        question.setJudgeCase("{}");
+        prepareJudgeCases(question);
         when(questionService.getById(2L)).thenReturn(question);
         when(questionSubmitService.updateStatusIfCurrent(
                 SUBMIT_ID,
@@ -105,7 +117,8 @@ class JudgeServiceImplTest {
     void doJudgeMarksSubmissionSucceedAfterJudgingCompletes() {
         Question question = new Question();
         question.setId(2L);
-        question.setJudgeCase("[{\"input\":\"1\",\"output\":\"1\"}]");
+        question.setJudgeCase("{}");
+        prepareJudgeCases(question);
         when(questionService.getById(2L)).thenReturn(question);
         when(questionSubmitService.updateStatusIfCurrent(
                 SUBMIT_ID,
@@ -129,5 +142,12 @@ class JudgeServiceImplTest {
                 questionSubmit.getQuestionId(),
                 JSONUtil.toJsonStr(judgeInfo),
                 true);
+    }
+
+    private void prepareJudgeCases(Question question) {
+        JudgeCaseConfig judgeCaseConfig = new JudgeCaseConfig();
+        when(judgeCaseDataService.deserialize(question.getJudgeCase())).thenReturn(judgeCaseConfig);
+        when(judgeInputEncoder.encode(judgeCaseConfig)).thenReturn(List.of(
+                ExecuteCaseRequest.builder().args(List.of("1")).build()));
     }
 }

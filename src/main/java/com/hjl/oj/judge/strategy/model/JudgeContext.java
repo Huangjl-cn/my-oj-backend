@@ -1,7 +1,7 @@
-package com.hjl.oj.judge.strategy;
+package com.hjl.oj.judge.strategy.model;
 
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
-import com.hjl.oj.model.dto.question.JudgeCase;
+import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import lombok.Data;
@@ -17,11 +17,9 @@ public class JudgeContext {
 
     private JudgeInfo judgeInfo;
 
-    private List<String> inputList;
-
     private List<String> outputList;
 
-    private List<JudgeCase> judgeCaseList;
+    private JudgeCaseConfig judgeCaseConfig;
 
     private Question question;
 
