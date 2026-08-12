@@ -23,6 +23,28 @@ public class CodeSandboxTest {
     @Resource
     private RemoteCodeSandbox remoteCodeSandbox;
 
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        while (scanner.hasNext()) {
+            String type = scanner.next();
+            CodeSandbox codeSandbox = CodeSandboxFactory.newInstance(type);
+            String code = "int main() { }";
+            String language = QuestionSubmitLanguageEnum.JAVA.getValue();
+            ExecuteCodeRequest executeCodeRequest = ExecuteCodeRequest.builder()
+                    .code(code)
+                    .language(language)
+                    .cases(testCases())
+                    .build();
+            ExecuteCodeResponse executeCodeResponse = codeSandbox.executeCode(executeCodeRequest);
+        }
+    }
+
+    private static List<ExecuteCaseRequest> testCases() {
+        return List.of(
+                ExecuteCaseRequest.builder().args(List.of("1", "2")).build(),
+                ExecuteCaseRequest.builder().args(List.of("3", "4")).build());
+    }
+
     @Test
     void executeCode() {
         String code = "public class Main {\n"
@@ -75,28 +97,5 @@ public class CodeSandboxTest {
                 .build();
         ExecuteCodeResponse executeCodeResponse = codeSandbox.executeCode(executeCodeRequest);
         Assertions.assertNotNull(executeCodeResponse);
-    }
-
-
-    public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-        while (scanner.hasNext()) {
-            String type = scanner.next();
-            CodeSandbox codeSandbox = CodeSandboxFactory.newInstance(type);
-            String code = "int main() { }";
-            String language = QuestionSubmitLanguageEnum.JAVA.getValue();
-            ExecuteCodeRequest executeCodeRequest = ExecuteCodeRequest.builder()
-                    .code(code)
-                    .language(language)
-                    .cases(testCases())
-                    .build();
-            ExecuteCodeResponse executeCodeResponse = codeSandbox.executeCode(executeCodeRequest);
-        }
-    }
-
-    private static List<ExecuteCaseRequest> testCases() {
-        return List.of(
-                ExecuteCaseRequest.builder().args(List.of("1", "2")).build(),
-                ExecuteCaseRequest.builder().args(List.of("3", "4")).build());
     }
 }

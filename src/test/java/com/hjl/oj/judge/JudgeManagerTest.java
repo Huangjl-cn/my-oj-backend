@@ -3,12 +3,7 @@ package com.hjl.oj.judge;
 import cn.hutool.json.JSONUtil;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.judge.strategy.comparator.JudgeOutputComparator;
-import com.hjl.oj.judge.strategy.impl.CPlusPlusLanguageJudgeStrategy;
-import com.hjl.oj.judge.strategy.impl.DefaultJudgeStrategy;
-import com.hjl.oj.judge.strategy.impl.GoLanguageJudgeStrategy;
-import com.hjl.oj.judge.strategy.impl.JavaLanguageJudgeStrategy;
-import com.hjl.oj.judge.strategy.impl.JavaScriptLanguageJudgeStrategy;
-import com.hjl.oj.judge.strategy.impl.PythonLanguageJudgeStrategy;
+import com.hjl.oj.judge.strategy.impl.*;
 import com.hjl.oj.judge.strategy.model.JudgeContext;
 import com.hjl.oj.model.dto.question.JudgeConfig;
 import com.hjl.oj.model.entity.Question;
@@ -24,9 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class JudgeManagerTest {
 

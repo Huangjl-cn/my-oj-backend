@@ -5,18 +5,18 @@
 <mapper namespace="com.hjl.oj.mapper.QuestionMapper">
 
     <resultMap id="BaseResultMap" type="com.hjl.oj.model.entity.Question">
-            <id property="id" column="id" />
-            <result property="userId" column="userId" />
-            <result property="title" column="title" />
-            <result property="content" column="content" />
-            <result property="tags" column="tags" />
-            <result property="answer" column="answer" />
-            <result property="submitNum" column="submitNum" />
-            <result property="acceptedNum" column="acceptedNum" />
-            <result property="judgeConfig" column="judgeConfig" />
-            <result property="judgeCase" column="judgeCase" />
-            <result property="createTime" column="createTime" />
-            <result property="updateTime" column="updateTime" />
-            <result property="isDelete" column="isDelete" />
+        <id property="id" column="id"/>
+        <result property="userId" column="userId"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="tags" column="tags"/>
+        <result property="answer" column="answer"/>
+        <result property="submitNum" column="submitNum"/>
+        <result property="acceptedNum" column="acceptedNum"/>
+        <result property="judgeConfig" column="judgeConfig"/>
+        <result property="judgeCase" column="judgeCase"/>
+        <result property="createTime" column="createTime"/>
+        <result property="updateTime" column="updateTime"/>
+        <result property="isDelete" column="isDelete"/>
     </resultMap>
 </mapper>

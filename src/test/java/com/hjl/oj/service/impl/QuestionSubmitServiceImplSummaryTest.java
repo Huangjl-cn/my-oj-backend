@@ -1,7 +1,7 @@
 package com.hjl.oj.service.impl;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.QuestionSubmit;
@@ -10,9 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class QuestionSubmitServiceImplSummaryTest {
 

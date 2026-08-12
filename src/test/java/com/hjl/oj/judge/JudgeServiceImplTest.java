@@ -9,9 +9,9 @@ import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.enums.JudgeInfoMessageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.service.JudgeCaseDataService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
-import com.hjl.oj.service.JudgeCaseDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,12 +24,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class JudgeServiceImplTest {

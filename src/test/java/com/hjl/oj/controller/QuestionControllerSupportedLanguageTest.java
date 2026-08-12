@@ -1,8 +1,8 @@
 package com.hjl.oj.controller;
 
 import com.hjl.oj.common.BaseResponse;
-import com.hjl.oj.model.vo.SupportedLanguageVO;
 import com.hjl.oj.model.vo.SupportedJudgeTypeVO;
+import com.hjl.oj.model.vo.SupportedLanguageVO;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
