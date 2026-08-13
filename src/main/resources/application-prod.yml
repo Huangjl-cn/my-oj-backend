@@ -38,3 +38,7 @@ codesandbox:
   type: remote
   # 沙箱服务器内网地址（部署时可按需用 --codesandbox.url 覆盖）
   url: http://CODESANDBOX_PROD_URL_PLACEHOLDER:8100
+  auth:
+    # 生产密钥由部署环境注入，严禁写入仓库；缺失时应用启动即失败（fail-fast）
+    key-id: ${CODESANDBOX_AUTH_KEY_ID:}
+    private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY:}

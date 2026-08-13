@@ -6,22 +6,25 @@ import cn.hutool.json.JSONUtil;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.CodeSandbox;
+import com.hjl.oj.judge.codesandbox.auth.SandboxAuthSigner;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
+import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 /**
  * 远程代码沙箱（实际调用接口的沙箱）
+ *
+ * <p>调用鉴权采用 ECDSA 请求签名（见 {@link SandboxAuthSigner}）：
+ * 每个请求携带 key-id / timestamp / nonce / 签名四个请求头，
+ * 沙箱侧验签、校验时间窗并拒绝重复 nonce（协议细节见 docs/sandbox-auth/README.md）。
  */
 @Component
 public class RemoteCodeSandbox implements CodeSandbox {
-
-    // 定义鉴权请求头和密钥
-    private static final String AUTH_REQUEST_HEADER = "auth";
-
-    private static final String AUTH_REQUEST_SECRET = "secretKey";
 
     private static final String EXECUTE_CODE_PATH = "/executeCode";
 
@@ -31,14 +34,18 @@ public class RemoteCodeSandbox implements CodeSandbox {
     @Value("${codesandbox.timeout:60000}")
     private int timeout;
 
+    @Resource
+    private SandboxAuthSigner sandboxAuthSigner;
+
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
         String url = codesandboxUrl + EXECUTE_CODE_PATH;
         String json = JSONUtil.toJsonStr(executeCodeRequest);
+        Map<String, String> authHeaders = sandboxAuthSigner.buildAuthHeaders(json);
 
         // 使用 try-with-resources 确保 HTTP 连接资源被正确关闭
         try (HttpResponse response = HttpUtil.createPost(url)
-                .header(AUTH_REQUEST_HEADER, AUTH_REQUEST_SECRET)
+                .addHeaders(authHeaders)
                 .body(json)
                 .timeout(timeout)
                 .execute()) {

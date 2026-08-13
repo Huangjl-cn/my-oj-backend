@@ -26,3 +26,8 @@ codesandbox:
   type: remote
   # 沙箱需要 Linux 环境，指向本机 WSL
   url: http://172.25.66.109:8100
+  # 调用鉴权：ECDSA 请求签名，沙箱侧配置配套公钥（见 docs/sandbox-auth/README.md）
+  auth:
+    # 仅供开发环境使用的测试密钥对，生产环境必须用环境变量覆盖（见 application-prod.yml）
+    key-id: sandbox-key-dev-2026
+    private-key: CODESANDBOX_DEV_PRIVATE_KEY_PLACEHOLDER
