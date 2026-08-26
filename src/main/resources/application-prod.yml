@@ -5,7 +5,8 @@ spring:
   datasource:
     url: jdbc:mysql://my-oj-db:3306/oj_db
     username: root
-    password: MYSQL_PASSWORD_PLACEHOLDER
+    # 由部署环境注入，缺失时启动失败
+    password: ${MYSQL_PASSWORD}
     # 连接池调优
     hikari:
       maximum-pool-size: 10
@@ -36,8 +37,8 @@ knife4j:
 # 代码沙箱
 codesandbox:
   type: remote
-  # 沙箱服务器内网地址（部署时可按需用 --codesandbox.url 覆盖）
-  url: http://CODESANDBOX_PROD_URL_PLACEHOLDER:8100
+  # 沙箱服务器地址由部署环境注入，缺失时启动失败
+  url: ${CODESANDBOX_URL}
   auth:
     # 生产密钥由部署环境注入，严禁写入仓库；缺失时应用启动即失败（fail-fast）
     key-id: ${CODESANDBOX_AUTH_KEY_ID:}

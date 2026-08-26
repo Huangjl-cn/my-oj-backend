@@ -3,10 +3,13 @@ spring:
   # 启用 spring-session-redis 后，session 超时由这里控制
   session:
     timeout: 2592000 # 30 天
+  # 本地敏感配置（数据库密码、沙箱密钥）从根目录 .env 读取；.env 已被 gitignore，不入库
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: jdbc:mysql://localhost:3306/oj_db
     username: root
-    password: MYSQL_PASSWORD_PLACEHOLDER
+    password: ${MYSQL_PASSWORD:}
 server:
   port: 8102
   servlet:
@@ -28,6 +31,6 @@ codesandbox:
   url: http://172.25.66.109:8100
   # 调用鉴权：ECDSA 请求签名，沙箱侧配置配套公钥（见 docs/sandbox-auth/README.md）
   auth:
-    # 仅供开发环境使用的测试密钥对，生产环境必须用环境变量覆盖（见 application-prod.yml）
-    key-id: sandbox-key-dev-2026
-    private-key: CODESANDBOX_DEV_PRIVATE_KEY_PLACEHOLDER
+    # 开发密钥从根目录 .env 读取（.env 不入库），生产环境用环境变量覆盖（见 application-prod.yml）
+    key-id: ${CODESANDBOX_AUTH_KEY_ID:}
+    private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY:}
