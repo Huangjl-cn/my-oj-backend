@@ -3,12 +3,14 @@ package com.hjl.oj.model.vo;
 import cn.hutool.json.JSONUtil;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.model.entity.QuestionSubmit;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
 /**
  * 题目提交封装类
@@ -61,6 +63,32 @@ public class QuestionSubmitVO implements Serializable {
      * 题目信息
      */
     private QuestionVO questionVO;
+    /**
+     * 题目标题（归档列表摘要）
+     */
+    @Schema(description = "题目标题")
+    private String questionTitle;
+    /**
+     * 题目标签列表（归档列表摘要）
+     */
+    @Schema(description = "题目标签列表")
+    private List<String> questionTags;
+    /**
+     * 提交用户昵称（归档列表摘要）
+     */
+    @Schema(description = "提交用户昵称")
+    private String userName;
+    /**
+     * 提交用户头像（归档列表摘要）
+     */
+    @Schema(description = "提交用户头像")
+    private String userAvatar;
+    /**
+     * 派生判题结果（accepted/failed/pending，与 status 和 judgeInfo.message 的对应关系一致）
+     */
+    @Schema(description = "派生判题结果，可选 accepted/failed/pending；status=2 仅代表判题完成，是否通过以本字段及 judgeInfo.message 为准",
+            example = "accepted")
+    private String judgeResult;
 
     /**
      * 包装类转对象

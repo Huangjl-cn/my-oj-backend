@@ -1,22 +1,28 @@
 package com.hjl.oj.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.exception.BusinessException;
+import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.judge.JudgeService;
+import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.mapper.QuestionSubmitMapper;
-import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitAddRequest;
-import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
+import com.hjl.oj.model.dto.questionsubmit.*;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.JudgeResultEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
+import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
 import com.hjl.oj.service.QuestionService;
@@ -34,7 +40,10 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,18 +51,58 @@ import java.util.stream.Collectors;
 public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper, QuestionSubmit>
         implements QuestionSubmitService {
 
+    /**
+     * 归档排序字段：提交时间
+     */
+    private static final String SORT_FIELD_CREATE_TIME = "createTime";
+    /**
+     * 归档排序字段：判题耗时（judgeInfo.time，ms）
+     */
+    private static final String SORT_FIELD_JUDGE_TIME = "judgeTime";
+    /**
+     * 归档排序字段：判题内存（judgeInfo.memory，KB）
+     */
+    private static final String SORT_FIELD_JUDGE_MEMORY = "judgeMemory";
+    /**
+     * 聚合排序字段：最近提交时间
+     */
+    private static final String SORT_FIELD_LATEST_SUBMIT_TIME = "latestSubmitTime";
+    /**
+     * 聚合排序字段：最短判题耗时
+     */
+    private static final String SORT_FIELD_BEST_TIME = "bestTime";
+    /**
+     * 聚合排序字段：最小判题内存
+     */
+    private static final String SORT_FIELD_BEST_MEMORY = "bestMemory";
+    /**
+     * 归档列表允许的排序字段白名单（缺省按提交时间）
+     */
+    private static final Set<String> ARCHIVE_SORT_FIELDS =
+            Set.of(SORT_FIELD_CREATE_TIME, SORT_FIELD_JUDGE_TIME, SORT_FIELD_JUDGE_MEMORY);
+    /**
+     * 按题目聚合允许的排序字段白名单（缺省按最近提交时间）
+     */
+    private static final Set<String> GROUP_SORT_FIELDS =
+            Set.of(SORT_FIELD_LATEST_SUBMIT_TIME, SORT_FIELD_BEST_TIME, SORT_FIELD_BEST_MEMORY);
     @Resource
     private QuestionService questionService;
-
     @Resource
     private UserService userService;
-
     @Resource
     @Lazy
     private JudgeService judgeService;
-
     @Resource(name = "judgeExecutor")
     private ExecutorService judgeExecutor;
+
+    /**
+     * SUM 聚合在无匹配行时返回 null，对外统一为 0
+     */
+    private static Long zeroIfNull(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    // region 提交归档页（全部提交 + 按题目聚合）
 
     /**
      * 提交题目
@@ -227,6 +276,286 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         summaryPage.setRecords(summaryList);
         return summaryPage;
     }
+
+    /**
+     * 提交归档分页查询（全部提交视图）：判题结果筛选 + 多字段排序，排序在分页前完成。
+     */
+    @Override
+    public Page<QuestionSubmitVO> getQuestionSubmitArchiveVOPage(QuestionSubmitArchiveQueryRequest archiveQueryRequest,
+                                                                 User loginUser) {
+        ThrowUtils.throwIf(archiveQueryRequest == null || archiveQueryRequest.getCurrent() <= 0
+                || archiveQueryRequest.getPageSize() <= 0, ErrorCode.PARAMS_ERROR);
+        JudgeResultEnum judgeResult = resolveJudgeResult(archiveQueryRequest.getJudgeResult());
+        String sortField = archiveQueryRequest.getSortField();
+        ThrowUtils.throwIf(StringUtils.isNotBlank(sortField) && !ARCHIVE_SORT_FIELDS.contains(sortField),
+                ErrorCode.PARAMS_ERROR, "排序字段参数错误");
+        String actualSortField = StringUtils.isBlank(sortField) ? SORT_FIELD_CREATE_TIME : sortField;
+        String sortOrder = resolveArchiveSortOrder(archiveQueryRequest.getSortOrder());
+        // 按提交者昵称模糊搜索：先解析用户 id 集合，匹配不到用户直接返回空页
+        List<Long> submitterIds = resolveSubmitterIds(archiveQueryRequest.getUserName());
+        if (submitterIds != null && submitterIds.isEmpty()) {
+            return new Page<>(archiveQueryRequest.getCurrent(), archiveQueryRequest.getPageSize(), 0);
+        }
+        QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq(ObjectUtils.isNotEmpty(archiveQueryRequest.getQuestionId()), "questionId",
+                archiveQueryRequest.getQuestionId());
+        queryWrapper.eq(ObjectUtils.isNotEmpty(archiveQueryRequest.getUserId()), "userId",
+                archiveQueryRequest.getUserId());
+        queryWrapper.eq(StringUtils.isNotEmpty(archiveQueryRequest.getLanguage()), "language",
+                archiveQueryRequest.getLanguage());
+        queryWrapper.eq(QuestionSubmitStatusEnum.getEnumByValue(archiveQueryRequest.getStatus()) != null, "status",
+                archiveQueryRequest.getStatus());
+        queryWrapper.eq("isDelete", false);
+        if (submitterIds != null) {
+            queryWrapper.in("userId", submitterIds);
+        }
+        if (judgeResult != JudgeResultEnum.ALL) {
+            // 筛选片段为服务端枚举常量，不含客户端输入
+            queryWrapper.apply(judgeResult.getSqlFragment());
+        }
+        // 整体追加 ORDER BY：排序表达式含函数与引号，方向仅来自白名单
+        queryWrapper.last(buildArchiveOrderBy(actualSortField, sortOrder));
+        Page<QuestionSubmit> questionSubmitPage = this.page(
+                new Page<>(archiveQueryRequest.getCurrent(), archiveQueryRequest.getPageSize()), queryWrapper);
+        return assembleArchiveVOPage(questionSubmitPage);
+    }
+
+    /**
+     * 组装提交归档分页：提交代码对所有登录用户可见（产品决策：公开代码促进学习），
+     * 批量补充题目与用户摘要及派生判题结果。（包级可见，便于单元测试）
+     */
+    Page<QuestionSubmitVO> assembleArchiveVOPage(Page<QuestionSubmit> questionSubmitPage) {
+        List<QuestionSubmit> questionSubmitList = questionSubmitPage.getRecords();
+        Page<QuestionSubmitVO> questionSubmitVOPage = new Page<>(questionSubmitPage.getCurrent(),
+                questionSubmitPage.getSize(), questionSubmitPage.getTotal());
+        if (CollUtil.isEmpty(questionSubmitList)) {
+            return questionSubmitVOPage;
+        }
+        Set<Long> questionIds = questionSubmitList.stream()
+                .map(QuestionSubmit::getQuestionId)
+                .collect(Collectors.toSet());
+        Map<Long, Question> questionMap = questionService.listByIds(questionIds).stream()
+                .collect(Collectors.toMap(Question::getId, Function.identity()));
+        Set<Long> userIds = questionSubmitList.stream()
+                .map(QuestionSubmit::getUserId)
+                .collect(Collectors.toSet());
+        Map<Long, User> userMap = userService.listByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        List<QuestionSubmitVO> questionSubmitVOList = questionSubmitList.stream().map(questionSubmit -> {
+            QuestionSubmitVO questionSubmitVO = QuestionSubmitVO.objToVo(questionSubmit);
+            JudgeInfo judgeInfo = questionSubmitVO.getJudgeInfo();
+            questionSubmitVO.setJudgeResult(JudgeResultEnum.from(questionSubmit.getStatus(),
+                    judgeInfo == null ? null : judgeInfo.getMessage()).getValue());
+            Question question = questionMap.get(questionSubmit.getQuestionId());
+            if (question != null) {
+                questionSubmitVO.setQuestionTitle(question.getTitle());
+                questionSubmitVO.setQuestionTags(JSONUtil.toList(question.getTags(), String.class));
+            }
+            User user = userMap.get(questionSubmit.getUserId());
+            if (user != null) {
+                questionSubmitVO.setUserName(user.getUserName());
+                questionSubmitVO.setUserAvatar(user.getUserAvatar());
+            }
+            return questionSubmitVO;
+        }).collect(Collectors.toList());
+        questionSubmitVOPage.setRecords(questionSubmitVOList);
+        return questionSubmitVOPage;
+    }
+
+    /**
+     * 提交归档分页查询（按题目聚合视图）：先筛选提交，再按题目聚合排序分页，total 为题目数量。
+     */
+    @Override
+    public Page<QuestionSubmitGroupVO> getQuestionSubmitGroupVOPage(QuestionSubmitGroupQueryRequest groupQueryRequest,
+                                                                    User loginUser) {
+        ThrowUtils.throwIf(groupQueryRequest == null || groupQueryRequest.getCurrent() <= 0
+                        || groupQueryRequest.getPageSize() <= 0 || groupQueryRequest.getPageSize() > 20,
+                ErrorCode.PARAMS_ERROR);
+        JudgeResultEnum judgeResult = resolveJudgeResult(groupQueryRequest.getJudgeResult());
+        String sortField = groupQueryRequest.getSortField();
+        ThrowUtils.throwIf(StringUtils.isNotBlank(sortField) && !GROUP_SORT_FIELDS.contains(sortField),
+                ErrorCode.PARAMS_ERROR, "排序字段参数错误");
+        String actualSortField = StringUtils.isBlank(sortField) ? SORT_FIELD_LATEST_SUBMIT_TIME : sortField;
+        String sortOrder = resolveArchiveSortOrder(groupQueryRequest.getSortOrder());
+        // 按提交者昵称模糊搜索：先解析用户 id 集合，匹配不到用户直接返回空页
+        List<Long> submitterIds = resolveSubmitterIds(groupQueryRequest.getUserName());
+        if (submitterIds != null && submitterIds.isEmpty()) {
+            return new Page<>(groupQueryRequest.getCurrent(), groupQueryRequest.getPageSize(), 0);
+        }
+        String judgeResultSql = buildJudgeResultSql(judgeResult);
+        Page<QuestionSubmitGroupRow> rowPage = new Page<>(groupQueryRequest.getCurrent(),
+                groupQueryRequest.getPageSize());
+        // 关闭自动 count：聚合查询的 total 需按题目数统计，改用独立 count 查询
+        rowPage.setSearchCount(false);
+        this.baseMapper.selectQuestionGroupPage(rowPage, judgeResultSql, groupQueryRequest.getLanguage(),
+                groupQueryRequest.getUserId(), submitterIds, buildGroupOrderBy(actualSortField, sortOrder));
+        Long total = this.baseMapper.countQuestionGroup(judgeResultSql, groupQueryRequest.getLanguage(),
+                groupQueryRequest.getUserId(), submitterIds);
+        rowPage.setTotal(total == null ? 0L : total);
+        List<QuestionSubmitGroupVO> groupVOList = rowPage.getRecords().stream()
+                .map(this::getQuestionSubmitGroupVO)
+                .collect(Collectors.toList());
+        Page<QuestionSubmitGroupVO> groupVOPage = new Page<>(rowPage.getCurrent(), rowPage.getSize(), rowPage.getTotal());
+        groupVOPage.setRecords(groupVOList);
+        return groupVOPage;
+    }
+
+    /**
+     * 校验并解析判题结果筛选（空视为 all）
+     */
+    private JudgeResultEnum resolveJudgeResult(String judgeResult) {
+        JudgeResultEnum judgeResultEnum = JudgeResultEnum.getEnumByValue(judgeResult);
+        ThrowUtils.throwIf(StringUtils.isNotBlank(judgeResult) && judgeResultEnum == null,
+                ErrorCode.PARAMS_ERROR, "判题结果参数错误");
+        return judgeResultEnum == null ? JudgeResultEnum.ALL : judgeResultEnum;
+    }
+
+    /**
+     * 校验并解析排序顺序（空视为降序）
+     */
+    private String resolveArchiveSortOrder(String sortOrder) {
+        ThrowUtils.throwIf(StringUtils.isNotBlank(sortOrder) && !CommonConstant.SORT_ORDER_ASC.equals(sortOrder)
+                        && !CommonConstant.SORT_ORDER_DESC.equals(sortOrder),
+                ErrorCode.PARAMS_ERROR, "排序顺序参数错误");
+        return StringUtils.isBlank(sortOrder) ? CommonConstant.SORT_ORDER_DESC : sortOrder;
+    }
+
+    /**
+     * 构建判题结果筛选片段（前导 AND，供聚合 SQL 的 ${} 占位使用）
+     */
+    private String buildJudgeResultSql(JudgeResultEnum judgeResult) {
+        if (judgeResult == null || judgeResult == JudgeResultEnum.ALL) {
+            return "";
+        }
+        return " AND " + judgeResult.getSqlFragment();
+    }
+
+    /**
+     * 按提交者昵称模糊解析用户 id 集合：昵称为空返回 null（不过滤），未匹配到用户返回空集合
+     */
+    private List<Long> resolveSubmitterIds(String userName) {
+        if (StringUtils.isBlank(userName)) {
+            return null;
+        }
+        return userService.list(Wrappers.<User>lambdaQuery().like(User::getUserName, userName))
+                .stream()
+                .map(User::getId)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 构建归档列表排序：缺失指标排在有值之后，同值按提交时间倒序稳定排序
+     */
+    private String buildArchiveOrderBy(String sortField, String sortOrder) {
+        String dir = CommonConstant.SORT_ORDER_ASC.equals(sortOrder) ? "ASC" : "DESC";
+        if (SORT_FIELD_JUDGE_TIME.equals(sortField)) {
+            return buildMetricOrderBy("CAST(JSON_EXTRACT(judgeInfo, '$.time') AS SIGNED)", dir);
+        }
+        if (SORT_FIELD_JUDGE_MEMORY.equals(sortField)) {
+            return buildMetricOrderBy("CAST(JSON_EXTRACT(judgeInfo, '$.memory') AS SIGNED)", dir);
+        }
+        return "ORDER BY createTime " + dir + ", id DESC";
+    }
+
+    private String buildMetricOrderBy(String metricExpr, String dir) {
+        return "ORDER BY (" + metricExpr + " IS NULL) ASC, " + metricExpr + " " + dir + ", createTime DESC, id DESC";
+    }
+
+    /**
+     * 构建按题目聚合排序：缺失指标排在有值之后，同值按最近提交时间倒序稳定排序
+     */
+    private String buildGroupOrderBy(String sortField, String sortOrder) {
+        String dir = CommonConstant.SORT_ORDER_ASC.equals(sortOrder) ? "ASC" : "DESC";
+        if (SORT_FIELD_BEST_TIME.equals(sortField)) {
+            return buildGroupMetricOrderBy("t.bestTime", dir);
+        }
+        if (SORT_FIELD_BEST_MEMORY.equals(sortField)) {
+            return buildGroupMetricOrderBy("t.bestMemory", dir);
+        }
+        return "ORDER BY t.createTime " + dir + ", t.id DESC";
+    }
+
+    private String buildGroupMetricOrderBy(String metricColumn, String dir) {
+        return "ORDER BY (" + metricColumn + " IS NULL) ASC, " + metricColumn + " " + dir
+                + ", t.createTime DESC, t.id DESC";
+    }
+
+    /**
+     * 聚合行转封装类：解析题目标签与最近一次提交的判题结果
+     */
+    private QuestionSubmitGroupVO getQuestionSubmitGroupVO(QuestionSubmitGroupRow row) {
+        QuestionSubmitGroupVO groupVO = new QuestionSubmitGroupVO();
+        groupVO.setQuestionId(row.getQuestionId());
+        groupVO.setQuestionTitle(row.getQuestionTitle());
+        groupVO.setQuestionTags(JSONUtil.toList(row.getQuestionTags(), String.class));
+        groupVO.setLatestResult(JudgeResultEnum.from(row.getLatestStatus(),
+                parseJudgeInfoMessage(row.getLatestJudgeInfo())).getValue());
+        groupVO.setLatestSubmissionId(row.getLatestSubmissionId());
+        groupVO.setLatestLanguage(row.getLatestLanguage());
+        groupVO.setLatestCode(row.getLatestCode());
+        groupVO.setLatestSubmitTime(row.getLatestSubmitTime());
+        groupVO.setBestTime(row.getBestTime());
+        groupVO.setBestMemory(row.getBestMemory());
+        return groupVO;
+    }
+
+    /**
+     * 从判题信息 JSON 中提取 message，解析失败时返回 null
+     */
+    private String parseJudgeInfoMessage(String judgeInfoJson) {
+        if (StringUtils.isBlank(judgeInfoJson)) {
+            return null;
+        }
+        try {
+            return JSONUtil.parseObj(judgeInfoJson).getStr("message");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 获取提交的指标排名数据：实时统计同题同语言、通过（Accepted）且指标有效的提交（含已通过的本人的提交），
+     * 返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。
+     * "超过"按不快于本次提交计：首次提交为 1/1（超过 100%），只要本人有指标就必有数据。
+     */
+    @Override
+    public QuestionSubmitRankVO getQuestionSubmitRank(long submissionId) {
+        QuestionSubmit questionSubmit = this.getById(submissionId);
+        if (questionSubmit == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        JudgeInfo judgeInfo = StringUtils.isBlank(questionSubmit.getJudgeInfo())
+                ? null : JSONUtil.toBean(questionSubmit.getJudgeInfo(), JudgeInfo.class);
+        Long time = judgeInfo == null ? null : judgeInfo.getTime();
+        Long memory = judgeInfo == null ? null : judgeInfo.getMemory();
+        QuestionSubmitRankVO rankVO = new QuestionSubmitRankVO();
+        rankVO.setSubmissionId(questionSubmit.getId());
+        rankVO.setQuestionId(questionSubmit.getQuestionId());
+        rankVO.setLanguage(questionSubmit.getLanguage());
+        rankVO.setTime(time);
+        rankVO.setMemory(memory);
+        if (time == null && memory == null) {
+            // 无有效指标（待判题/编译失败等），无对比数据
+            return rankVO;
+        }
+        QuestionSubmitRankStatsRow statsRow = this.baseMapper.selectQuestionLanguageRankStats(
+                JudgeResultEnum.ACCEPTED.getSqlFragment(), questionSubmit.getQuestionId(),
+                questionSubmit.getLanguage(), time, memory);
+        if (statsRow == null) {
+            return rankVO;
+        }
+        if (time != null) {
+            rankVO.setTimeTotal(zeroIfNull(statsRow.getTimeTotal()));
+            rankVO.setTimeBeaten(zeroIfNull(statsRow.getTimeBeaten()));
+        }
+        if (memory != null) {
+            rankVO.setMemoryTotal(zeroIfNull(statsRow.getMemoryTotal()));
+            rankVO.setMemoryBeaten(zeroIfNull(statsRow.getMemoryBeaten()));
+        }
+        return rankVO;
+    }
+
+    // endregion
 }
 
 

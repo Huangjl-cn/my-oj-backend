@@ -16,4 +16,70 @@
         <result property="updateTime" column="updateTime"/>
         <result property="isDelete" column="isDelete"/>
     </resultMap>
+
+    <!-- judgeResultSql / orderSql 由服务端根据枚举白名单生成，禁止拼接客户端输入 -->
+    <select id="selectQuestionGroupPage" resultType="com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupRow">
+        SELECT t.questionId,
+               q.title       AS questionTitle,
+               q.tags        AS questionTags,
+               t.id          AS latestSubmissionId,
+               t.language    AS latestLanguage,
+               t.code        AS latestCode,
+               t.status      AS latestStatus,
+               t.judgeInfo   AS latestJudgeInfo,
+               t.createTime  AS latestSubmitTime,
+               t.bestTime,
+               t.bestMemory
+        FROM (
+                 SELECT questionId,
+                        id,
+                        language,
+                        code,
+                        status,
+                        judgeInfo,
+                        createTime,
+                        ROW_NUMBER() OVER (PARTITION BY questionId ORDER BY createTime DESC, id DESC) AS rn,
+                        MIN(CAST(JSON_EXTRACT(judgeInfo, '$.time') AS SIGNED))
+                            OVER (PARTITION BY questionId) AS bestTime,
+                        MIN(CAST(JSON_EXTRACT(judgeInfo, '$.memory') AS SIGNED))
+                            OVER (PARTITION BY questionId) AS bestMemory
+                 FROM question_submit
+                 WHERE isDelete = 0${judgeResultSql}
+                 <if test="language != null and language != ''">AND language = #{language}</if>
+                 <if test="userId != null">AND userId = #{userId}</if>
+                 <if test="userIds != null and !userIds.isEmpty()">
+                     AND userId IN
+                     <foreach collection="userIds" item="submitterId" open="(" separator="," close=")">#{submitterId}</foreach>
+                 </if>
+             ) t
+                 JOIN question q ON q.id = t.questionId AND q.isDelete = 0
+        WHERE t.rn = 1
+        ${orderSql}
+    </select>
+
+    <select id="countQuestionGroup" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT s.questionId)
+        FROM question_submit s
+                 JOIN question q ON q.id = s.questionId AND q.isDelete = 0
+        WHERE s.isDelete = 0${judgeResultSql}
+        <if test="language != null and language != ''">AND s.language = #{language}</if>
+        <if test="userId != null">AND s.userId = #{userId}</if>
+        <if test="userIds != null and !userIds.isEmpty()">
+            AND s.userId IN
+            <foreach collection="userIds" item="submitterId" open="(" separator="," close=")">#{submitterId}</foreach>
+        </if>
+    </select>
+
+    <!-- acceptedSql 为 JudgeResultEnum.ACCEPTED 的服务端常量片段：只与通过（Accepted）的提交对比 -->
+    <select id="selectQuestionLanguageRankStats" resultType="com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow">
+        SELECT COUNT(CAST(JSON_EXTRACT(judgeInfo, '$.time') AS SIGNED))      AS timeTotal,
+               SUM(CAST(JSON_EXTRACT(judgeInfo, '$.time') AS SIGNED) >= #{time})    AS timeBeaten,
+               COUNT(CAST(JSON_EXTRACT(judgeInfo, '$.memory') AS SIGNED))    AS memoryTotal,
+               SUM(CAST(JSON_EXTRACT(judgeInfo, '$.memory') AS SIGNED) >= #{memory}) AS memoryBeaten
+        FROM question_submit
+        WHERE ${acceptedSql}
+          AND questionId = #{questionId}
+          AND language = #{language}
+          AND isDelete = 0
+    </select>
 </mapper>

@@ -13,6 +13,8 @@ import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.model.dto.question.*;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitAddRequest;
+import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitArchiveQueryRequest;
+import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupQueryRequest;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.QuestionSubmit;
@@ -351,22 +353,35 @@ public class QuestionController {
     }
 
     /**
-     * 分页获取题目提交列表（除了管理员外，普通用户只能看到非答案、提交代码等公开信息）
+     * 分页获取提交归档列表（全部提交视图）
+     * <p>支持按判题结果（judgeResult）筛选与按提交时间/判题耗时/判题内存排序，缺省按提交时间倒序；
+     * 提交代码对所有登录用户可见（产品决策：公开代码促进学习）。
      *
-     * @param questionSubmitQueryRequest 题目提交查询请求
-     * @return 脱敏后的题目提交信息
+     * @param archiveQueryRequest 提交归档查询请求
+     * @return 题目提交归档信息
      */
     @PostMapping("/question_submit/list/page")
-    public BaseResponse<Page<QuestionSubmitVO>> listQuestionSubmitByPage(@RequestBody QuestionSubmitQueryRequest questionSubmitQueryRequest,
+    public BaseResponse<Page<QuestionSubmitVO>> listQuestionSubmitByPage(@RequestBody QuestionSubmitArchiveQueryRequest archiveQueryRequest,
                                                                          HttpServletRequest request) {
-        long current = questionSubmitQueryRequest.getCurrent();
-        long size = questionSubmitQueryRequest.getPageSize();
-        // 从数据库中查询原始的题目提交分页信息
-        Page<QuestionSubmit> questionSubmitPage = questionSubmitService.page(new Page<>(current, size),
-                questionSubmitService.getQueryWrapper(questionSubmitQueryRequest));
+        // 登录才能浏览提交归档
         final User loginUser = userService.getLoginUser(request);
-        // 返回脱敏信息
-        return ResultUtils.success(questionSubmitService.getQuestionSubmitVOPage(questionSubmitPage, loginUser));
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitArchiveVOPage(archiveQueryRequest, loginUser));
+    }
+
+    /**
+     * 分页获取按题目聚合的提交归档（按题目视图）
+     * <p>先按判题结果筛选提交记录，再按题目聚合排序分页；total 为题目数量，
+     * 每题返回筛选范围内最近一次结果、提交代码与最佳耗时/内存。
+     *
+     * @param groupQueryRequest 按题目聚合查询请求
+     * @return 按题目聚合的提交归档分页
+     */
+    @PostMapping("/question_submit/group/page")
+    public BaseResponse<Page<QuestionSubmitGroupVO>> listQuestionSubmitGroupByPage(@RequestBody QuestionSubmitGroupQueryRequest groupQueryRequest,
+                                                                                   HttpServletRequest request) {
+        // 登录才能浏览提交归档
+        final User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitGroupVOPage(groupQueryRequest, loginUser));
     }
 
     /**
@@ -412,7 +427,7 @@ public class QuestionController {
     }
 
     /**
-     * 根据题目提交id 获取
+     * 根据题目提交 id 获取详情（登录即可查看任意提交，提交代码对所有登录用户可见）
      */
     @GetMapping("/question_submit/get")
     public BaseResponse<QuestionSubmit> getQuestionSubmitById(long id, HttpServletRequest request) {
@@ -423,11 +438,27 @@ public class QuestionController {
         if (questionSubmit == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
-        User loginUser = userService.getLoginUser(request);
-        // 不是本人或管理员，不能直接获取所有信息
-        if (!questionSubmit.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
-        }
+        // 登录即可查看（产品决策：公开代码促进学习），仅需校验登录态
+        userService.getLoginUser(request);
         return ResultUtils.success(questionSubmit);
+    }
+
+    /**
+     * 获取提交的指标排名数据（同题同语言对比）
+     * <p>对比人群：同一道题、同语言、通过（Accepted）且指标有效的提交（含本人若已通过）；
+     * 耗时/内存越小越好，返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。
+     * 首次通过提交为 1/1（即超过 100%），只要本人有指标就必有数据。
+     *
+     * @param id 提交 id
+     * @return 排名统计数据（本人无有效指标时对应计数字段为 null）
+     */
+    @GetMapping("/question_submit/rank")
+    public BaseResponse<QuestionSubmitRankVO> getQuestionSubmitRank(@RequestParam long id, HttpServletRequest request) {
+        if (id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 登录即可查看
+        userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitRank(id));
     }
 }
