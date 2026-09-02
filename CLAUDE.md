@@ -35,14 +35,22 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 4. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误和资源限制；`JudgeManager` 用语言枚举注册表解析策略，再由共享的 `JudgeOutputComparator` 解析模板输出的 JSON 并按声明类型比较。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
 5. **结构化用例**：题目 `judgeCase` 保存参数定义、输出定义和结构化用例。`JudgeInputEncoder` 将每条用例编码为 `cases[].args[]`，代码沙箱只原样传递独立参数并返回 stdout，不理解 OJ 值类型或预期答案。
 
+### 提交归档与统计（`QuestionSubmitServiceImpl` + `QuestionSubmitMapper.xml`）
+
+1. **全部提交视图** `list/page`：请求用独立的 `QuestionSubmitArchiveQueryRequest`（不继承 PageRequest，sortOrder 缺省 descend，与 my/list/page 共用的旧 `QuestionSubmitQueryRequest` 保持不动）；`judgeResult`/`sortField`/`sortOrder` 白名单校验（非法抛 PARAMS_ERROR），判题结果语义唯一来源是 `JudgeResultEnum`（含 SQL 片段常量 + `from(status, message)` 派生）；排序表达式（含 JSON_EXTRACT）整体经 `wrapper.last("ORDER BY ...")` 拼接，缺失指标垫底、同值按 createTime 倒序；响应平铺 questionTitle/questionTags/userName/userAvatar 与派生 judgeResult，题目/用户摘要用批量 `listByIds` 预取（勿改回 N+1）。
+2. **按题聚合视图** `group/page`：项目首批自定义 SQL（XML 的 `selectQuestionGroupPage`/`countQuestionGroup`，窗口函数 `ROW_NUMBER` + `MIN(...) OVER`）；total 是题目数（`setSearchCount(false)` + 显式 count）；bestTime/bestMemory 分别独立取最小（可能来自不同提交），人群随 `judgeResult` 等筛选变化，无有效指标的行自动排除、null 垫底。
+3. **指标击败率** `rank`：对比人群为同题同语言 + 仅 Accepted（复用 `JudgeResultEnum.ACCEPTED.getSqlFragment()`）+ 含本人；"超过"= 指标 `>=` 本次提交（持平计入，首次通过提交 1/1=100%）；只返回 Total/Beaten 计数，比例由前端计算。
+4. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 列名直接用 camelCase（同 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
+
 ### 鉴权
 
 - 登录态存 session：`UserService.getLoginUser(request)` 读 session 属性 `user_login`（`UserConstant.USER_LOGIN_STATE`），登出即删除该属性。
 - 接口权限：`@AuthCheck(mustRole = "admin")` 注解 + `AuthInterceptor` AOP 切面校验，无 Spring Security。
+- 提交浏览与代码公开（产品决策"公开代码促进学习"）：`list/page`、`group/page`、`rank`、`get` 详情均为登录即可访问；`get` 不再要求本人或管理员，提交 `code` 在列表/聚合/详情中对所有登录用户可见；`userAccount` 维持脱敏不返回（与 UserVO 一致）。
 
 ### 重要约定 / 坑
 
-- **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`、`/question/question_submit/get`。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
+- **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`（归档-全部提交视图）、`/question/question_submit/group/page`（归档-按题聚合视图）、`/question/question_submit/rank`（指标击败率）、`/question/question_submit/get`（详情）。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
 - **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig`、`question_submit.judgeInfo` 是 text 列存 JSON 字符串；结构化 `judgeCase` 统一通过 `JudgeCaseDataService` 校验和转换，其他字段沿用 Hutool `JSONUtil`。
 - **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防前端 JS 精度丢失），返回 Long 的接口无需单独处理。
 - **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
