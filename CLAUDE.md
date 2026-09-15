@@ -26,14 +26,15 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 
 ### 判题模块（核心，`judge/`）— 一条设计模式流水线
 
-1. **异步入口**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言/题目，落 WAITING 状态的提交记录，然后交给专用 Java 21 虚拟线程 `judgeExecutor` 调用 `JudgeService.processSubmission`，HTTP 请求只返回提交 ID。
-2. **编排**：`JudgeServiceImpl.processSubmission` 用条件更新原子抢占 `WAITING → RUNNING`，`runJudgePipeline` 调沙箱、构建上下文、调用 `JudgeManager.applyStrategy` 并回写结果；成功时 `RUNNING → SUCCEED`，异常时尝试 `RUNNING → FAILED`。
-3. **沙箱**（工厂 + 代理模式）：`CodeSandbox` 接口，`CodeSandboxFactory` 按 `codesandbox.type` 配置实例化，`CodeSandboxProxy` 包一层做请求/响应日志。三个实现：
+1. **提交即入队 + 有界调度**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言/题目，落 WAITING 记录后直接返回提交 ID，不做异步派发——`question_submit` 表即队列（WAITING 按 id 升序 = 提交顺序，雪花 id 单调递增）。`judge/queue/JudgeTaskDispatcher` 每轮（`judge.queue.poll-interval-ms` 默认 1s）按 id 升序领取 WAITING 记录，`Semaphore`（`judge.queue.concurrency` 默认 4）限制同时在跑的沙箱调用数（削峰填谷，保护沙箱侧容器内存），执行仍走专用 Java 21 虚拟线程 `judgeExecutor`；轮询与排队计数依赖 `idx_status_id (status, id)` 索引（见 `sql/add_question_submit_status_id_index.sql`）。排队人数经 `/question/question_submit/queue/status` 查询（`aheadCount`=前方 WAITING 数、`queueLength`=队列总长，与实际派发顺序严格一致，登录即可，Long 字段序列化为字符串）。
+2. **编排**：`JudgeServiceImpl.processSubmission` 用条件更新原子抢占 `WAITING → RUNNING`（抢占失败 = 已被其他判题线程处理，属正常竞争，log.debug 后返回 null），`runJudgePipeline` 调沙箱、构建上下文、调用 `JudgeManager.applyStrategy` 并回写结果；成功时 `RUNNING → SUCCEED`，异常时尝试 `RUNNING → FAILED`。多实例部署安全：重复派发靠原子抢占收敛，不会重复判。
+3. **崩溃恢复（at-least-once）**：启动后首轮轮询自动续判遗留的 WAITING 记录；每 60s 将 RUNNING 超过 `judge.queue.stale-running-minutes`（默认 10 分钟，须远大于判题最大耗时）的卡死记录重置回 WAITING 重判。
+4. **沙箱**（工厂 + 代理模式）：`CodeSandbox` 接口，`CodeSandboxFactory` 按 `codesandbox.type` 配置实例化，`CodeSandboxProxy` 包一层做请求/响应日志。三个实现：
    - `RemoteCodeSandbox` — 真实调用外部沙箱 HTTP 接口，带 `auth: secretKey` 请求头；所有语言统一走 `/executeCode`，由沙箱按语言选择执行环境；URL 来自 `codesandbox.url`；
    - `ExampleCodeSandbox` — 本地模拟，不联网；
    - `ThirdPartyCodeSandbox` — 占位骨架。
-4. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误和资源限制；`JudgeManager` 用语言枚举注册表解析策略，再由共享的 `JudgeOutputComparator` 解析模板输出的 JSON 并按声明类型比较。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
-5. **结构化用例**：题目 `judgeCase` 保存参数定义、输出定义和结构化用例。`JudgeInputEncoder` 将每条用例编码为 `cases[].args[]`，代码沙箱只原样传递独立参数并返回 stdout，不理解 OJ 值类型或预期答案。
+5. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一执行错误和资源限制；`JudgeManager` 用语言枚举注册表解析策略，再由共享的 `JudgeOutputComparator` 解析模板输出的 JSON 并按声明类型比较。C++ 使用基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
+6. **结构化用例**：题目 `judgeCase` 保存参数定义、输出定义和结构化用例。`JudgeInputEncoder` 将每条用例编码为 `cases[].args[]`，代码沙箱只原样传递独立参数并返回 stdout，不理解 OJ 值类型或预期答案。
 
 ### 提交归档与统计（`QuestionSubmitServiceImpl` + `QuestionSubmitMapper.xml`）
 
@@ -50,25 +51,25 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 
 ### 重要约定 / 坑
 
-- **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`（归档-全部提交视图）、`/question/question_submit/group/page`（归档-按题聚合视图）、`/question/question_submit/rank`（指标击败率）、`/question/question_submit/get`（详情）。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
+- **提交接口已合并**：`QuestionSubmitController` 整体 @Deprecated、路由被注释（为微服务拆分预留）；题目提交相关接口在 `QuestionController` 下：`/question/question_submit/do`、`/question/question_submit/list/page`（归档-全部提交视图）、`/question/question_submit/group/page`（归档-按题聚合视图）、`/question/question_submit/rank`（指标击败率）、`/question/question_submit/get`（详情）、`/question/question_submit/queue/status`（排队人数，判题等待期间前端轮询）。改提交逻辑去 QuestionController / QuestionSubmitServiceImpl，不要动废弃 Controller。
 - **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig`、`question_submit.judgeInfo` 是 text 列存 JSON 字符串；结构化 `judgeCase` 统一通过 `JudgeCaseDataService` 校验和转换，其他字段沿用 Hutool `JSONUtil`。
 - **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防前端 JS 精度丢失），返回 Long 的接口无需单独处理。
 - **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
 - 逻辑删除：全局 `isDelete` 字段（MyBatis-Plus 全局配置）。
 - **状态与结果分离**：提交状态 `SUCCEED` 表示判题流程完成，不代表 Accepted；最终 verdict、首个错误用例或沙箱诊断在 `judgeInfo.message`。消息可能为多行文本。
-- **判题并发与失败收敛**：`updateStatusIfCurrent` 用单条条件 SQL 保证 `WAITING → RUNNING → SUCCEED|FAILED`；当前没有分布式锁或自动重试。
+- **判题并发与失败收敛**：`updateStatusIfCurrent` 用单条条件 SQL 保证 `WAITING → RUNNING → SUCCEED|FAILED`；并发上限由 `JudgeTaskDispatcher` 的许可数控制，无分布式锁（多实例靠原子抢占收敛）；卡死的 RUNNING 由调度器按 `judge.queue.stale-running-minutes` 超时重置回 WAITING 重判。
 
 ## 配置（`src/main/resources/`）
 
 公共项在 `application.yml`（默认激活 dev），环境差异拆在 profile 文件，profile 覆盖同名公共项：
 
-- `application-dev.yml`：本地运行。端口 **8102**，MySQL localhost:3306/oj_db，SQL 日志开（StdOutImpl）、Knife4j 开、session/cookie 30 天、codesandbox.url 指向 WSL 地址 172.25.66.109:8100（沙箱需要 Linux 环境）。
+- `application-dev.yml`：本地运行。端口 **8102**，MySQL localhost:3306/oj_db，SQL 日志开（StdOutImpl）、Knife4j 开、session/cookie 30 天、codesandbox.url 指向 WSL 地址 172.25.66.109:8100（沙箱需要 Linux 环境）。**敏感配置从根目录 `.env`（properties 格式，已被 gitignore）注入**：`MYSQL_PASSWORD`、`CODESANDBOX_AUTH_KEY_ID`、`CODESANDBOX_AUTH_PRIVATE_KEY`，任一缺失时 `SandboxAuthConfig` fail-fast 启动失败；密钥对用 `SandboxAuthKeygenTool` 生成，沙箱侧配对公钥与协议见 `docs/sandbox-auth/README.md`（两端 key-id 必须一致）。
 - `application-prod.yml`：上线部署。端口 **8101**，MySQL `my-oj-db`（docker 网络内），SQL 日志和接口文档（knife4j + springdoc）全关、session/cookie 24 小时、HikariCP 池 10、响应压缩开、codesandbox.url 指向沙箱服务器内网地址（如 CODESANDBOX_PROD_URL_PLACEHOLDER:8100，部署时可按需覆盖）。
 - `application-test.yml`：占位配置（my_db 等），实际使用需替换。
 
 日志由 `logback-spring.xml` 管理：dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚、留 30 天）+ ERROR 单独文件。
 
-`codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。`codesandbox.timeout` 位于公共配置，默认 60000 ms，同时用于 HTTP 连接和读取超时。
+`codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。`codesandbox.timeout` 位于公共配置，默认 60000 ms，同时用于 HTTP 连接和读取超时。`judge.queue.*` 也在公共配置：`concurrency`（判题并发上限）、`poll-interval-ms`（轮询间隔）、`stale-running-minutes`（卡死 RUNNING 重置阈值）。
 
 ## Docker 部署
 
