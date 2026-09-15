@@ -1,7 +1,6 @@
 package com.hjl.oj.judge;
 
 import cn.hutool.json.JSONUtil;
-import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.model.dto.question.JudgeCaseConfig;
@@ -23,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -72,7 +72,8 @@ class JudgeServiceImplTest {
                 QuestionSubmitStatusEnum.RUNNING,
                 null)).thenReturn(false);
 
-        assertThrows(BusinessException.class, () -> judgeService.processSubmission(SUBMIT_ID));
+        // 抢占失败是重复派发时的正常竞争，静默返回 null 而不是抛异常
+        assertNull(judgeService.processSubmission(SUBMIT_ID));
 
         verify(questionService, never()).getById(any());
         verify(judgeManager, never()).applyStrategy(any());

@@ -461,4 +461,23 @@ public class QuestionController {
         userService.getLoginUser(request);
         return ResultUtils.success(questionSubmitService.getQuestionSubmitRank(id));
     }
+
+    /**
+     * 获取提交的排队状态（判题削峰：排队人数展示）
+     * <p>待判题时返回前方排队人数与队列总长，队列按提交顺序派发，人数与实际判题顺序一致；
+     * 非待判题状态前方人数为 0，前端收到 2/3 状态可停止轮询。
+     *
+     * @param id 提交 id
+     * @return 排队状态
+     */
+    @GetMapping("/question_submit/queue/status")
+    public BaseResponse<QuestionSubmitQueueStatusVO> getQuestionSubmitQueueStatus(@RequestParam long id,
+                                                                                  HttpServletRequest request) {
+        if (id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 登录即可查看（与提交浏览一致）
+        userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitQueueStatus(id));
+    }
 }

@@ -45,3 +45,12 @@ knife4j:
 codesandbox:
   # 同时作为连接和读取超时，单位毫秒
   timeout: 60000
+# 判题任务调度：question_submit 表即队列，轮询派发 + 有界并发削峰填谷（见 JudgeTaskDispatcher）
+judge:
+  queue:
+    # 同时判题的最大提交数，取值按沙箱侧可用内存与容器峰值内存估算
+    concurrency: 4
+    # 轮询待判题任务的间隔（毫秒），也是提交后开始判题的最大延迟
+    poll-interval-ms: 1000
+    # 判题中超过该分钟数视为进程中断遗留，重置回待判题重判；0 关闭（须远大于判题最大耗时）
+    stale-running-minutes: 10

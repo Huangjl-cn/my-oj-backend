@@ -62,7 +62,9 @@ public class JudgeServiceImpl implements JudgeService {
                 QuestionSubmitStatusEnum.RUNNING,
                 null);
         if (!claimed) {
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "提交已被其他判题任务处理");
+            // 多实例部署或重复派发时的正常竞争：任务已被其他判题线程抢占，静默跳过
+            log.debug("提交已被其他判题任务处理，跳过，questionSubmitId={}", questionSubmitId);
+            return null;
         }
 
         try {

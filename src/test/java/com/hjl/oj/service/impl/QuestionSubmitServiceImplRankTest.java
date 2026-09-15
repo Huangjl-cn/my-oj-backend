@@ -2,7 +2,6 @@ package com.hjl.oj.service.impl;
 
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
-import com.hjl.oj.judge.JudgeService;
 import com.hjl.oj.mapper.QuestionSubmitMapper;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow;
 import com.hjl.oj.model.entity.QuestionSubmit;
@@ -17,8 +16,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -38,12 +35,6 @@ class QuestionSubmitServiceImplRankTest {
 
     @Mock
     private UserService userService;
-
-    @Mock
-    private JudgeService judgeService;
-
-    @Mock
-    private ExecutorService judgeExecutor;
 
     @Mock
     private QuestionSubmitMapper questionSubmitMapper;

@@ -72,5 +72,6 @@ create table if not exists question_submit
     isDelete   tinyint  default 0                 not null comment '是否删除',
     index idx_postId (questionId),
     index idx_userId (userId),
-    index idx_user_question_time (userId, questionId, createTime)
+    index idx_user_question_time (userId, questionId, createTime),
+    index idx_status_id (status, id)
 ) comment '题目提交';

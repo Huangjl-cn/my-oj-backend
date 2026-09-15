@@ -3,7 +3,6 @@ package com.hjl.oj.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
-import com.hjl.oj.judge.JudgeService;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitArchiveQueryRequest;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupQueryRequest;
 import com.hjl.oj.model.entity.Question;
@@ -19,7 +18,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,12 +34,6 @@ class QuestionSubmitServiceImplArchiveTest {
 
     @Mock
     private UserService userService;
-
-    @Mock
-    private JudgeService judgeService;
-
-    @Mock
-    private ExecutorService judgeExecutor;
 
     @InjectMocks
     private QuestionSubmitServiceImpl questionSubmitService;

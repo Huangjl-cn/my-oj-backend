@@ -11,7 +11,6 @@ import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
-import com.hjl.oj.judge.JudgeService;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.mapper.QuestionSubmitMapper;
 import com.hjl.oj.model.dto.questionsubmit.*;
@@ -22,6 +21,7 @@ import com.hjl.oj.model.enums.JudgeResultEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
+import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
@@ -33,16 +33,13 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -89,11 +86,6 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
     private QuestionService questionService;
     @Resource
     private UserService userService;
-    @Resource
-    @Lazy
-    private JudgeService judgeService;
-    @Resource(name = "judgeExecutor")
-    private ExecutorService judgeExecutor;
 
     /**
      * SUM 聚合在无匹配行时返回 null，对外统一为 0
@@ -136,15 +128,8 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         if (!save) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "数据插入失败");
         }
-        // 事务提交后再执行判题，避免异步线程读取不到刚保存的提交记录。
-        Long questionSubmitId = questionSubmit.getId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                scheduleJudge(questionSubmitId);
-            }
-        });
-        return questionSubmitId;
+        // 提交记录即队列元素：落库后由 JudgeTaskDispatcher 轮询拾起判题，削峰填谷
+        return questionSubmit.getId();
     }
 
     @Override
@@ -184,15 +169,25 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         return getById(questionSubmitId);
     }
 
-    private void scheduleJudge(long questionSubmitId) {
-        // 使用专用虚拟线程异步判题，异常由判题服务同步到提交状态。
-        judgeExecutor.execute(() -> {
-            try {
-                judgeService.processSubmission(questionSubmitId);
-            } catch (Exception e) {
-                log.error("判题任务执行失败，questionSubmitId={}", questionSubmitId, e);
-            }
-        });
+    @Override
+    public QuestionSubmit getNextWaitingSubmission() {
+        // 雪花 id 单调递增，等价于提交先后顺序；仅取 id，避免读出大字段 code
+        QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("id")
+                .eq("status", QuestionSubmitStatusEnum.WAITING.getValue())
+                .orderByAsc("id")
+                .last("LIMIT 1");
+        return this.getBaseMapper().selectOne(queryWrapper);
+    }
+
+    @Override
+    public boolean resetStaleRunningSubmissions(Date staleThreshold) {
+        // 判题最长耗时受 codesandbox.timeout 约束，超时仍是 RUNNING 的记录只可能是进程中断遗留
+        LambdaUpdateWrapper<QuestionSubmit> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(QuestionSubmit::getStatus, QuestionSubmitStatusEnum.RUNNING.getValue())
+                .lt(QuestionSubmit::getUpdateTime, staleThreshold)
+                .set(QuestionSubmit::getStatus, QuestionSubmitStatusEnum.WAITING.getValue());
+        return this.getBaseMapper().update(null, updateWrapper) > 0;
     }
 
     /**
@@ -553,6 +548,40 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
             rankVO.setMemoryBeaten(zeroIfNull(statsRow.getMemoryBeaten()));
         }
         return rankVO;
+    }
+
+    /**
+     * 获取提交的排队状态：待判题时返回前方排队人数与队列总长。
+     * 队列按 id 升序派发（见 JudgeTaskDispatcher），因此前方人数与实际派发顺序一致；
+     * 非待判题状态不在队列中，前方人数为 0。
+     */
+    @Override
+    public QuestionSubmitQueueStatusVO getQuestionSubmitQueueStatus(long submissionId) {
+        QuestionSubmit questionSubmit = this.getById(submissionId);
+        if (questionSubmit == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
+        }
+        QuestionSubmitQueueStatusVO queueStatusVO = new QuestionSubmitQueueStatusVO();
+        queueStatusVO.setSubmissionId(questionSubmit.getId());
+        queueStatusVO.setStatus(questionSubmit.getStatus());
+        queueStatusVO.setQueueLength(zeroIfNull(this.getBaseMapper().selectCount(buildWaitingCountWrapper(null))));
+        if (QuestionSubmitStatusEnum.WAITING.getValue().equals(questionSubmit.getStatus())) {
+            queueStatusVO.setAheadCount(zeroIfNull(this.getBaseMapper()
+                    .selectCount(buildWaitingCountWrapper(questionSubmit.getId()))));
+        } else {
+            queueStatusVO.setAheadCount(0L);
+        }
+        return queueStatusVO;
+    }
+
+    /**
+     * 构建待判题计数查询：指定 beforeId 时仅统计排在其之前（更早提交）的 WAITING 记录
+     */
+    private QueryWrapper<QuestionSubmit> buildWaitingCountWrapper(Long beforeId) {
+        QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status", QuestionSubmitStatusEnum.WAITING.getValue());
+        queryWrapper.lt(beforeId != null, "id", beforeId);
+        return queryWrapper;
     }
 
     // endregion

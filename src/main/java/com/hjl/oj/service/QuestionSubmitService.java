@@ -11,9 +11,12 @@ import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
 import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
+import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
+
+import java.util.Date;
 
 public interface QuestionSubmitService extends IService<QuestionSubmit> {
 
@@ -81,4 +84,21 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
      * 返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。
      */
     QuestionSubmitRankVO getQuestionSubmitRank(long submissionId);
+
+    /**
+     * 取最老的一条待判题提交（仅取 id），无则返回 null。
+     * 雪花 id 单调递增，等价于提交先后顺序，判题队列据此按提交顺序派发。
+     */
+    QuestionSubmit getNextWaitingSubmission();
+
+    /**
+     * 将 RUNNING 且 updateTime 早于阈值的提交重置回 WAITING（判题进程中断遗留的卡死记录），返回是否有更新。
+     */
+    boolean resetStaleRunningSubmissions(Date staleThreshold);
+
+    /**
+     * 获取提交的排队状态：待判题时返回前方排队人数与队列总长，
+     * 队列即 WAITING 记录、按 id 升序派发，因此前方人数与实际派发顺序一致。
+     */
+    QuestionSubmitQueueStatusVO getQuestionSubmitQueueStatus(long submissionId);
 }
