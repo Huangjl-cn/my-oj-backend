@@ -1,6 +1,7 @@
 package com.hjl.oj.model.dto.user;
 
 import lombok.Data;
+import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -16,8 +17,10 @@ public class UserRegisterRequest implements Serializable {
 
     private String userAccount;
 
+    @ToString.Exclude
     private String userPassword;
 
+    @ToString.Exclude
     private String checkPassword;
 
     private String userName;

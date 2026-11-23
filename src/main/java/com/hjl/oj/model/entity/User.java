@@ -2,6 +2,7 @@ package com.hjl.oj.model.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
+import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -29,6 +30,7 @@ public class User implements Serializable {
     /**
      * 用户密码
      */
+    @ToString.Exclude
     private String userPassword;
     /**
      * 开放平台id

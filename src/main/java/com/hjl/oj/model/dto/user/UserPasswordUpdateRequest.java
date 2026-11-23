@@ -1,6 +1,7 @@
 package com.hjl.oj.model.dto.user;
 
 import lombok.Data;
+import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -17,15 +18,18 @@ public class UserPasswordUpdateRequest implements Serializable {
     /**
      * 原密码。
      */
+    @ToString.Exclude
     private String oldPassword;
 
     /**
      * 新密码。
      */
+    @ToString.Exclude
     private String newPassword;
 
     /**
      * 确认新密码。
      */
+    @ToString.Exclude
     private String checkPassword;
 }
