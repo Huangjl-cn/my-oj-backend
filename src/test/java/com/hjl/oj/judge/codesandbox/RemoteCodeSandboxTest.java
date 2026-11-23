@@ -8,6 +8,7 @@ import com.hjl.oj.judge.codesandbox.model.ExecuteCaseRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeRequest;
 import com.hjl.oj.judge.codesandbox.model.ExecuteCodeResponse;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
+import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -33,16 +34,16 @@ class RemoteCodeSandboxTest {
     }
 
     @Test
-    void nonJavaLanguageUsesTheUnifiedExecuteCodeEndpoint() throws Exception {
+    void executeCodePostsSignedCasesToExecuteCodeEndpoint() throws Exception {
         AtomicInteger requestCount = new AtomicInteger();
-        AtomicReference<String> authHeader = new AtomicReference<>();
+        AtomicReference<Headers> requestHeaders = new AtomicReference<>();
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         ExecutorService serverExecutor = Executors.newVirtualThreadPerTaskExecutor();
         server.setExecutor(serverExecutor);
         server.createContext("/executeCode", exchange -> {
             requestCount.incrementAndGet();
-            authHeader.set(exchange.getRequestHeaders().getFirst(SandboxAuthSigner.HEADER_KEY_ID));
+            requestHeaders.set(exchange.getRequestHeaders());
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = ("{\"outputList\":[\"1\"],\"message\":\"ok\",\"status\":1,"
                     + "\"judgeInfo\":{\"message\":\"Accepted\",\"memory\":1,\"time\":1}}")
@@ -69,8 +70,12 @@ class RemoteCodeSandboxTest {
 
             assertEquals(List.of("1"), response.getOutputList());
             assertEquals(1, requestCount.get());
-            assertEquals("sandbox-key-test", authHeader.get());
+            assertEquals("sandbox-key-test", requestHeaders.get().getFirst(SandboxAuthSigner.HEADER_KEY_ID));
+            assertNotNull(requestHeaders.get().getFirst(SandboxAuthSigner.HEADER_TIMESTAMP));
+            assertNotNull(requestHeaders.get().getFirst(SandboxAuthSigner.HEADER_NONCE));
+            assertNotNull(requestHeaders.get().getFirst(SandboxAuthSigner.HEADER_SIGNATURE));
             assertTrue(requestBody.get().contains("\"cases\":[{\"args\":[\"1\"]}]"));
+            // 旧协议按 inputList 传整段输入，已改为 cases[].args[]，防止回退
             assertFalse(requestBody.get().contains("inputList"));
         } finally {
             server.stop(0);

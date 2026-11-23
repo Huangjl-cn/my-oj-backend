@@ -31,6 +31,10 @@ import static org.mockito.Mockito.*;
 class JudgeServiceImplTest {
 
     private static final long SUBMIT_ID = 1L;
+    /**
+     * 题目判题用例的原始 JSON。内容无关紧要：反序列化由 mock 的 judgeCaseDataService 接管（见 prepareJudgeCases）。
+     */
+    private static final String MOCKED_JUDGE_CASE_JSON = "mocked-judge-case";
 
     @Mock
     private QuestionService questionService;
@@ -65,7 +69,7 @@ class JudgeServiceImplTest {
     }
 
     @Test
-    void doJudgeStopsWhenSubmissionWasAlreadyClaimed() {
+    void processSubmissionStopsWhenSubmissionWasAlreadyClaimed() {
         when(questionSubmitService.updateStatusIfCurrent(
                 SUBMIT_ID,
                 QuestionSubmitStatusEnum.WAITING,
@@ -80,10 +84,10 @@ class JudgeServiceImplTest {
     }
 
     @Test
-    void doJudgeMarksSubmissionFailedWhenJudgingThrows() {
+    void processSubmissionMarksSubmissionFailedWhenJudgingThrows() {
         Question question = new Question();
         question.setId(2L);
-        question.setJudgeCase("{}");
+        question.setJudgeCase(MOCKED_JUDGE_CASE_JSON);
         prepareJudgeCases(question);
         when(questionService.getById(2L)).thenReturn(question);
         when(questionSubmitService.updateStatusIfCurrent(
@@ -111,10 +115,10 @@ class JudgeServiceImplTest {
     }
 
     @Test
-    void doJudgeMarksSubmissionSucceedAfterJudgingCompletes() {
+    void processSubmissionMarksSubmissionSucceedAfterJudgingCompletes() {
         Question question = new Question();
         question.setId(2L);
-        question.setJudgeCase("{}");
+        question.setJudgeCase(MOCKED_JUDGE_CASE_JSON);
         prepareJudgeCases(question);
         when(questionService.getById(2L)).thenReturn(question);
         when(questionSubmitService.updateStatusIfCurrent(
