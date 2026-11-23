@@ -96,6 +96,8 @@
     </dependencies>
 
     <build>
+        <!-- 固定产物名为 target/my-oj.jar，部署脚本与文档不随版本号变化 -->
+        <finalName>my-oj</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -114,6 +116,11 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!-- mvn spring-boot:run 默认激活 dev；可用 -Dspring-boot.run.profiles=xxx 覆盖。
+                         application.yml 不设默认 profile，java -jar 时必须显式指定环境 -->
+                    <profiles>
+                        <profile>dev</profile>
+                    </profiles>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

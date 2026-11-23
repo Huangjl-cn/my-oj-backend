@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 
 import java.util.Arrays;
@@ -12,6 +13,7 @@ import java.util.Arrays;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
+@ActiveProfiles({"dev", "test"})
 class QuestionServiceTransactionTest {
 
     @Resource

@@ -1,0 +1,24 @@
+# 开发用 MySQL（仅本机开发，与生产的 docker-compose.yml 无关）
+# 启动：docker compose -f deploy/docker-compose.dev.yml up -d
+# 账号 root / oj_dev，与 application-dev.yml 的默认值一致；首次启动自动执行 sql/create_table.sql
+# 重建数据：docker compose -f deploy/docker-compose.dev.yml down -v
+name: my-oj-dev
+
+services:
+  my-oj-dev-db:
+    image: mysql:8.4
+    container_name: my-oj-dev-db
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: oj_dev
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - my-oj-dev-db-data:/var/lib/mysql
+      - ../sql/create_table.sql:/docker-entrypoint-initdb.d/01-create_table.sql:ro
+
+volumes:
+  my-oj-dev-db-data:

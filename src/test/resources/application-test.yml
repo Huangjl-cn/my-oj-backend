@@ -1,0 +1,6 @@
+# 测试 profile：叠加在 dev 之上使用（@ActiveProfiles({"dev", "test"})），只放与开发环境不同的项。
+# 加载 Spring 上下文的测试不连接数据库、不调用真实沙箱，mvn test 在干净环境下即可通过。
+judge:
+  queue:
+    # 不启动判题调度器，避免测试期间领取开发库里真实的待判题记录
+    enabled: false

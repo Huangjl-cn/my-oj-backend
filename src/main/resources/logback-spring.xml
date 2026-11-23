@@ -61,8 +61,9 @@
         </root>
     </springProfile>
 
-    <!-- test：仅控制台 -->
-    <springProfile name="test">
+    <!-- 既不是 dev 也不是 prod（单独的 test，或没指定 profile）：仅控制台。
+         没指定 profile 时应用会因缺少配置而启动失败，这里保证失败原因能打印出来 -->
+    <springProfile name="!dev &amp; !prod">
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
         </root>

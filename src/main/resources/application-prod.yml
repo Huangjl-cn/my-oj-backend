@@ -13,6 +13,8 @@ spring:
       minimum-idle: 5
       max-lifetime: 1800000
 server:
+  # 容器内必须监听所有网卡，宿主机端口映射才能访问（compose 只把端口绑在 127.0.0.1）
+  address: 0.0.0.0
   port: 8101
   servlet:
     session:

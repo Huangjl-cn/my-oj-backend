@@ -22,8 +22,12 @@ create table if not exists user
     index idx_unionId (unionId)
 ) comment '用户' collate = utf8mb4_unicode_ci;
 
--- 添加默认admin用户，密码为12345678
-insert into user (userAccount, userPassword, userName, userRole) values ('admin', '8c03c9839cb10c023d7ea362e4b42f69', 'admin', 'admin') on duplicate key update userPassword = '8c03c9839cb10c023d7ea362e4b42f69', userRole = 'admin';
+-- 添加默认admin用户，密码为12345678（仅用于开发和首次部署，上线后必须立即修改）
+-- admin 不存在时才插入，脚本可重复执行（userAccount 没有唯一索引，on duplicate key 不会生效）
+insert into user (userAccount, userPassword, userName, userRole)
+select 'admin', '8c03c9839cb10c023d7ea362e4b42f69', 'admin', 'admin'
+from dual
+where not exists (select 1 from user where userAccount = 'admin');
 
 
 -- 题目表

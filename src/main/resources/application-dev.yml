@@ -1,16 +1,18 @@
-# 开发环境配置：本地运行，宽松优先（SQL 日志、接口文档、长会话）
+# 开发环境配置：clone 后无需任何额外文件即可启动（mvn spring-boot:run 会自动激活本 profile）。
+# 本机差异用环境变量覆盖（下方 ${变量:默认值}），或在项目根目录建 config/application-dev.yml
+# （Spring Boot 自动加载、已被 gitignore），不要直接改本文件。
 spring:
   # 启用 spring-session-redis 后，session 超时由这里控制
   session:
     timeout: 2592000 # 30 天
-  # 本地敏感配置（数据库密码、沙箱密钥）从根目录 .env 读取；.env 已被 gitignore，不入库
-  config:
-    import: optional:file:.env[.properties]
+  # 开发库默认值与 deploy/docker-compose.dev.yml 一致（root / oj_dev）
   datasource:
-    url: jdbc:mysql://localhost:3306/oj_db
-    username: root
-    password: ${MYSQL_PASSWORD:}
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/oj_db}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:oj_dev}
 server:
+  # 开发服务默认只监听本机；需要其他机器访问时设 SERVER_ADDRESS=0.0.0.0
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 8102
   servlet:
     session:
@@ -24,13 +26,16 @@ mybatis-plus:
 # 接口文档（Knife4j）
 knife4j:
   enable: true
-# 代码沙箱类型选择
+# 代码沙箱
 codesandbox:
-  type: remote
-  # 沙箱需要 Linux 环境，指向本机 WSL
-  url: http://172.25.66.109:8100
-  # 调用鉴权：ECDSA 请求签名，沙箱侧配置配套公钥（见 docs/sandbox-auth/README.md）
+  # 默认用模拟沙箱（不依赖真实沙箱，判题结果是假的，只用于跑通流程）；
+  # 联调真实沙箱时设 CODESANDBOX_TYPE=remote，并按需设 CODESANDBOX_URL
+  type: ${CODESANDBOX_TYPE:example}
+  url: ${CODESANDBOX_URL:http://localhost:8100}
+  # 调用鉴权：ECDSA 请求签名（协议见 docs/sandbox-auth/README.md）
   auth:
-    # 开发密钥从根目录 .env 读取（.env 不入库），生产环境用环境变量覆盖（见 application-prod.yml）
-    key-id: ${CODESANDBOX_AUTH_KEY_ID:}
-    private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY:}
+    # 【开发专用测试密钥对】与 my-oj-sandbox 的 application-dev.yml 公钥配对。
+    # 该私钥已公开，只能用于本机开发；生产沙箱只信任生产公钥，这把私钥在生产无效。
+    # 生产密钥由部署环境变量注入（见 application-prod.yml），严禁写入仓库。
+    key-id: sandbox-key-dev-2026
+    private-key: MEECAQAwEwYHKoZIzj0CAQYIKoZIzj0DAQcEJzAlAgEBBCA3g4tm7fJYlnSAbBjD7pU8exOMaXToOSfNkCuMzfmfDQ==

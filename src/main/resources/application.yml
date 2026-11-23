@@ -3,9 +3,9 @@
 spring:
   application:
     name: my-oj
-  # 默认 dev 环境（部署时用 --spring.profiles.active=prod 覆盖）
-  profiles:
-    active: dev
+  # 不设默认 profile：必须显式指定环境，避免生产漏传参数时悄悄以开发配置运行。
+  # 本地开发 mvn spring-boot:run 会自动激活 dev（见 pom.xml 的 spring-boot-maven-plugin）；
+  # IDE 运行 MainApplication 时加 VM 参数 -Dspring.profiles.active=dev。
   # 数据库驱动（连接地址、账号等环境差异见各 profile 文件）
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -15,7 +15,6 @@ spring:
       # 大小限制
       max-file-size: 10MB
 server:
-  address: 0.0.0.0
   servlet:
     context-path: /api
 mybatis-plus:
@@ -48,6 +47,8 @@ codesandbox:
 # 判题任务调度：question_submit 表即队列，轮询派发 + 有界并发削峰填谷（见 JudgeTaskDispatcher）
 judge:
   queue:
+    # 是否启动判题调度器（轮询派发 + 卡死回收）；测试上下文中关闭，避免领取真实的待判题记录
+    enabled: true
     # 同时判题的最大提交数，取值按沙箱侧可用内存与容器峰值内存估算
     concurrency: 4
     # 轮询待判题任务的间隔（毫秒），也是提交后开始判题的最大延迟

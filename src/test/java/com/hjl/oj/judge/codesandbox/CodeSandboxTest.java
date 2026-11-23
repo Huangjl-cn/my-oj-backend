@@ -9,13 +9,16 @@ import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 import java.util.Scanner;
 
 @SpringBootTest
+@ActiveProfiles({"dev", "test"})
 public class CodeSandboxTest {
     @Value("${codesandbox.type:example}")
     private String type;
@@ -45,7 +48,12 @@ public class CodeSandboxTest {
                 ExecuteCaseRequest.builder().args(List.of("3", "4")).build());
     }
 
+    /**
+     * 调用真实沙箱的集成测试，默认跳过。运行方式：
+     * RUN_SANDBOX_TESTS=true CODESANDBOX_URL=http://<沙箱地址>:8100 mvn test -Dtest=CodeSandboxTest
+     */
     @Test
+    @EnabledIfEnvironmentVariable(named = "RUN_SANDBOX_TESTS", matches = "true")
     void executeCode() {
         String code = "public class Main {\n"
                 + "    public static void main(String[] args) {\n"
