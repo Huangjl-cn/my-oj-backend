@@ -16,13 +16,6 @@ public final class QuestionStarterCodeDefaults {
     }
 
     /**
-     * 保留一个无配置入口，供历史调用和测试使用。
-     */
-    public static String getDefaultStarterCode(QuestionSubmitLanguageEnum language) {
-        return getDefaultStarterCode(language, null);
-    }
-
-    /**
      * 根据题目的结构化判题配置生成可直接运行的模板。
      */
     public static String getDefaultStarterCode(QuestionSubmitLanguageEnum language,

@@ -64,26 +64,6 @@ public class QuestionVO implements Serializable {
     private UserVO userVO;
 
     /**
-     * 包装类转对象
-     */
-    public static Question voToObj(QuestionVO questionVO) {
-        if (questionVO == null) {
-            return null;
-        }
-        Question question = new Question();
-        BeanUtils.copyProperties(questionVO, question);
-        List<String> tagList = questionVO.getTags();
-        if (tagList != null) {
-            question.setTags(JSONUtil.toJsonStr(tagList));
-        }
-        JudgeConfig voJudgeConfig = questionVO.getJudgeConfig();
-        if (voJudgeConfig != null) {
-            question.setJudgeConfig(JSONUtil.toJsonStr(voJudgeConfig));
-        }
-        return question;
-    }
-
-    /**
      * 对象转包装类
      */
     public static QuestionVO objToVo(Question question) {

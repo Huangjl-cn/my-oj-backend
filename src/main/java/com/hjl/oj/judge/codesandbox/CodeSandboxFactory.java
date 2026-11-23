@@ -2,7 +2,6 @@ package com.hjl.oj.judge.codesandbox;
 
 import com.hjl.oj.judge.codesandbox.impl.ExampleCodeSandbox;
 import com.hjl.oj.judge.codesandbox.impl.RemoteCodeSandbox;
-import com.hjl.oj.judge.codesandbox.impl.ThirdPartyCodeSandbox;
 import com.hjl.oj.utils.SpringContextUtils;
 
 /**
@@ -19,7 +18,6 @@ public class CodeSandboxFactory {
     public static CodeSandbox newInstance(String type) {
         return switch (type) {
             case "remote" -> SpringContextUtils.getBean(RemoteCodeSandbox.class);
-            case "thirdParty" -> new ThirdPartyCodeSandbox();
             default -> new ExampleCodeSandbox();
         };
     }

@@ -14,22 +14,22 @@ public class QuestionSubmitRankStatsRow implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 同语言、判题成功且有有效耗时的其他提交数（不含本人）
+     * 同题同语言、通过（Accepted）且有有效耗时的提交数（含本人若已通过）
      */
     private Long timeTotal;
 
     /**
-     * 其中耗时比目标提交更大（更差）的数量
+     * 其中耗时大于等于目标提交的数量（持平计入）
      */
     private Long timeBeaten;
 
     /**
-     * 同语言、判题成功且有有效内存的其他提交数（不含本人）
+     * 同题同语言、通过（Accepted）且有有效内存的提交数（含本人若已通过）
      */
     private Long memoryTotal;
 
     /**
-     * 其中内存比目标提交更大（更差）的数量
+     * 其中内存大于等于目标提交的数量（持平计入）
      */
     private Long memoryBeaten;
 }

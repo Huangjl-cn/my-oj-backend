@@ -15,8 +15,8 @@ import java.util.List;
 
 /**
  * @author hjl15
- * &#064;description  针对表【question(题目)】的数据库操作Service
- * &#064;createDate  2025-12-18 13:42:50
+ * @description 针对表【question(题目)】的数据库操作Service
+ * @createDate 2025-12-18 13:42:50
  */
 public interface QuestionService extends IService<Question> {
     /**

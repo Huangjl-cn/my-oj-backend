@@ -57,11 +57,6 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
     QuestionSubmitVO getQuestionSubmitVO(QuestionSubmit questionSubmit, User loginUser);
 
     /**
-     * 分页获取题目提交封装
-     */
-    Page<QuestionSubmitVO> getQuestionSubmitVOPage(Page<QuestionSubmit> questionSubmitPage, User loginUser);
-
-    /**
      * 分页获取不含提交代码的摘要。
      */
     Page<QuestionSubmitSummaryVO> getQuestionSubmitSummaryVOPage(Page<QuestionSubmit> questionSubmitPage);

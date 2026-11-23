@@ -18,7 +18,7 @@ public class Question implements Serializable {
     private static final long serialVersionUID = 3478502196276717899L;
     /**
      * id
-     * 这里把id的生成规则设置为ASSIGN_ID是为了放在用户通过自增的主键来爬虫
+     * 用 ASSIGN_ID（雪花 id）而不是自增主键，防止他人按连续 id 遍历爬取题目
      */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;

@@ -94,8 +94,6 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         return value == null ? 0L : value;
     }
 
-    // region 提交归档页（全部提交 + 按题目聚合）
-
     /**
      * 提交题目
      */
@@ -113,9 +111,7 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         if (question == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
-        // 是否已提交题目
         long userId = loginUser.getId();
-        // 每个用户串行提交题目
         QuestionSubmit questionSubmit = new QuestionSubmit();
         questionSubmit.setUserId(userId);
         questionSubmit.setQuestionId(questionSubmitAddRequest.getQuestionId());
@@ -194,18 +190,18 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
      * 获取查询包装类：前端根据用户可能会用到哪些字段查询，传递一个请求对象，返回mybatis框架支持的查询QueryWrapper类
      */
     @Override
-    public QueryWrapper<QuestionSubmit> getQueryWrapper(QuestionSubmitQueryRequest questionSubmitSubmitQueryRequest) {
+    public QueryWrapper<QuestionSubmit> getQueryWrapper(QuestionSubmitQueryRequest questionSubmitQueryRequest) {
         QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
-        if (questionSubmitSubmitQueryRequest == null) {
+        if (questionSubmitQueryRequest == null) {
             return queryWrapper;
         }
         //考虑用户会用哪些字段来查询
-        Long questionId = questionSubmitSubmitQueryRequest.getQuestionId();
-        Long userId = questionSubmitSubmitQueryRequest.getUserId();
-        String language = questionSubmitSubmitQueryRequest.getLanguage();
-        Integer status = questionSubmitSubmitQueryRequest.getStatus();
-        String sortField = questionSubmitSubmitQueryRequest.getSortField();
-        String sortOrder = questionSubmitSubmitQueryRequest.getSortOrder();
+        Long questionId = questionSubmitQueryRequest.getQuestionId();
+        Long userId = questionSubmitQueryRequest.getUserId();
+        String language = questionSubmitQueryRequest.getLanguage();
+        Integer status = questionSubmitQueryRequest.getStatus();
+        String sortField = questionSubmitQueryRequest.getSortField();
+        String sortOrder = questionSubmitQueryRequest.getSortOrder();
         // 拼接查询条件
         queryWrapper.eq(ObjectUtils.isNotEmpty(questionId), "questionId", questionId);
         queryWrapper.eq(ObjectUtils.isNotEmpty(userId), "userId", userId);
@@ -239,28 +235,6 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         return questionSubmitVO;
     }
 
-    /**
-     * 分页获取实体的封装类
-     *
-     * @param questionSubmitPage 分页实体
-     * @param loginUser          当前用户
-     * @return 分页封装类
-     */
-    @Override
-    public Page<QuestionSubmitVO> getQuestionSubmitVOPage(Page<QuestionSubmit> questionSubmitPage, User loginUser) {
-        List<QuestionSubmit> questionSubmitList = questionSubmitPage.getRecords();
-        Page<QuestionSubmitVO> questionSubmitVOPage = new Page<>(questionSubmitPage.getCurrent(), questionSubmitPage.getSize(), questionSubmitPage.getTotal());
-        if (CollUtil.isEmpty(questionSubmitList)) {
-            return questionSubmitVOPage;
-        }
-        //暂时只做了脱敏，没有关联用户和题目
-        List<QuestionSubmitVO> questionSubmitVOList = questionSubmitList.stream()
-                .map(questionSubmit -> getQuestionSubmitVO(questionSubmit, loginUser))
-                .collect(Collectors.toList());
-        questionSubmitVOPage.setRecords(questionSubmitVOList);
-        return questionSubmitVOPage;
-    }
-
     @Override
     public Page<QuestionSubmitSummaryVO> getQuestionSubmitSummaryVOPage(Page<QuestionSubmit> questionSubmitPage) {
         Page<QuestionSubmitSummaryVO> summaryPage = new Page<>(questionSubmitPage.getCurrent(),
@@ -271,6 +245,8 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         summaryPage.setRecords(summaryList);
         return summaryPage;
     }
+
+    // region 提交归档页（全部提交 + 按题目聚合）
 
     /**
      * 提交归档分页查询（全部提交视图）：判题结果筛选 + 多字段排序，排序在分页前完成。
@@ -508,6 +484,8 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         }
     }
 
+    // endregion
+
     /**
      * 获取提交的指标排名数据：实时统计同题同语言、通过（Accepted）且指标有效的提交（含已通过的本人的提交），
      * 返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。
@@ -583,8 +561,6 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         queryWrapper.lt(beforeId != null, "id", beforeId);
         return queryWrapper;
     }
-
-    // endregion
 }
 
 

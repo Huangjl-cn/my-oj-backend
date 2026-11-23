@@ -13,7 +13,7 @@ import java.util.List;
  */
 @Data
 public class JudgeContext {
-    private Integer ExecuteStatus;
+    private Integer executeStatus;
 
     private JudgeInfo judgeInfo;
 

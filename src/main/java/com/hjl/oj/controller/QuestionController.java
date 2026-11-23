@@ -72,17 +72,16 @@ public class QuestionController {
     /**
      * 获取后端支持的判题值类型
      */
-    @GetMapping("/supported-judge-types")  // HTTP GET请求映射，用于获取支持的判题类型
-    public BaseResponse<List<SupportedJudgeTypeVO>> getSupportedJudgeTypes() {  // 方法声明，返回支持的判题类型列表的响应
-        // 使用Stream API处理JudgeValueTypeEnum的所有枚举值，将其转换为SupportedJudgeTypeVO对象列表
+    @GetMapping("/supported-judge-types")
+    public BaseResponse<List<SupportedJudgeTypeVO>> getSupportedJudgeTypes() {
         List<SupportedJudgeTypeVO> supportedJudgeTypes = Stream.of(JudgeValueTypeEnum.values())
-                .map(type -> new SupportedJudgeTypeVO(  // 将枚举值映射为SupportedJudgeTypeVO对象
-                        type.getValue(),      // 获取枚举值
-                        type.getText(),       // 获取枚举文本描述
-                        type.getCategory(),   // 获取枚举类别
-                        type.getDimensions(), // 获取枚举维度
-                        type.getElementType())) // 获取枚举元素类型
-                .toList();  // 将流转换为列表
+                .map(type -> new SupportedJudgeTypeVO(
+                        type.getValue(),
+                        type.getText(),
+                        type.getCategory(),
+                        type.getDimensions(),
+                        type.getElementType()))
+                .toList();
         return ResultUtils.success(supportedJudgeTypes);
     }
 

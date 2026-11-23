@@ -22,10 +22,5 @@ public interface UserConstant {
      */
     String ADMIN_ROLE = "admin";
 
-    /**
-     * 被封号
-     */
-    String BAN_ROLE = "ban";
-
     // endregion
 }

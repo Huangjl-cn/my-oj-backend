@@ -55,7 +55,6 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
 
-        //安装插件可快速生成
         String title = question.getTitle();
         String content = question.getContent();
         String tags = question.getTags();
