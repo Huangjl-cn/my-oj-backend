@@ -10,15 +10,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 mvn clean package          # 构建
-mvn spring-boot:run        # 本地运行，默认 dev profile，端口 8102，context-path /api
-mvn test                   # 全部测试
+mvn spring-boot:run        # 本地运行，pom 中配置自动激活 dev profile，127.0.0.1:8102，context-path /api
+mvn test                   # 全部测试，不依赖数据库和沙箱
 mvn test -Dtest=CodeSandboxTest   # 单个测试类
 ```
 
-- 前置条件：JDK 21、Maven 3.6+。
-- 首次运行先执行 `sql/create_table.sql`：创建 `oj_db`、三张表（user / question / question_submit）、默认 admin 账号（密码 12345678）。
+- 前置条件：JDK 21、Maven 3.6.3+。clone 后无需任何配置文件即可运行。
+- 开发库：`docker compose -f deploy/docker-compose.dev.yml up -d`（MySQL 8.4，root / oj_dev，首次启动自动执行 `sql/create_table.sql`）。无 Docker 时手动执行该脚本：创建 `oj_db`、四张表（user / question / question_starter_code / question_submit）、默认 admin 账号（密码 12345678，仅开发用；脚本可重复执行）。
 - 接口文档（dev）：`http://localhost:8102/api/doc.html`（Knife4j）。
-- 测试注意：`CodeSandboxTest.executeCode` 直接 new `RemoteCodeSandbox`，外部沙箱没启动会失败；`executeCodeByValue/executeCodeByProxy` 走 `codesandbox.type` 配置（默认 example，可离线跑）。
+- 测试注意：加载 Spring 上下文的测试统一用 `@ActiveProfiles({"dev", "test"})`；test profile（`src/test/resources/application-test.yml`）只覆盖与 dev 不同的项，目前是关闭判题调度器（`judge.queue.enabled=false`），上下文不连数据库。`CodeSandboxTest.executeCode` 调用真实沙箱，默认跳过，需 `RUN_SANDBOX_TESTS=true`（沙箱地址用 `CODESANDBOX_URL`）。
 
 ## 架构
 
@@ -61,18 +61,18 @@ mvn test -Dtest=CodeSandboxTest   # 单个测试类
 
 ## 配置（`src/main/resources/`）
 
-公共项在 `application.yml`（默认激活 dev），环境差异拆在 profile 文件，profile 覆盖同名公共项：
+公共项在 `application.yml`，环境差异拆在 profile 文件，profile 覆盖同名公共项。**`application.yml` 不设默认 profile**，必须显式指定环境：`mvn spring-boot:run` 由 pom 的 spring-boot-maven-plugin 自动激活 dev，IDE 加 `-Dspring.profiles.active=dev`，Docker 镜像固定 `SPRING_PROFILES_ACTIVE=prod`。
 
-- `application-dev.yml`：本地运行。端口 **8102**，MySQL localhost:3306/oj_db，SQL 日志开（StdOutImpl）、Knife4j 开、session/cookie 30 天、codesandbox.url 指向 WSL 地址 172.25.66.109:8100（沙箱需要 Linux 环境）。**敏感配置从根目录 `.env`（properties 格式，已被 gitignore）注入**：`MYSQL_PASSWORD`、`CODESANDBOX_AUTH_KEY_ID`、`CODESANDBOX_AUTH_PRIVATE_KEY`，任一缺失时 `SandboxAuthConfig` fail-fast 启动失败；密钥对用 `SandboxAuthKeygenTool` 生成，沙箱侧配对公钥与协议见 `docs/sandbox-auth/README.md`（两端 key-id 必须一致）。
+- `application-dev.yml`：本地运行，**写全开发默认值，clone 即可运行**。监听 127.0.0.1:**8102**（`SERVER_ADDRESS` 可覆盖），MySQL `localhost:3306/oj_db` root / oj_dev（`MYSQL_URL` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 可覆盖），SQL 日志开、Knife4j 开、session/cookie 30 天。沙箱默认 `example`（模拟，结果是假的），联调真实沙箱设 `CODESANDBOX_TYPE=remote` + `CODESANDBOX_URL`（默认 `http://localhost:8100`）。**内置开发专用测试密钥对**（key-id `sandbox-key-dev-2026`，与 my-oj-sandbox 的 dev 公钥配对；已公开，生产沙箱不信任）。本机差异用环境变量或项目根目录 `config/application-dev.yml`（已 gitignore）覆盖，不要改仓库里的文件。新密钥对用 `SandboxAuthKeygenTool` 生成，协议见 `docs/sandbox-auth/README.md`（两端 key-id 必须一致）。
 - `application-prod.yml`：上线部署。端口 **8101**，MySQL `my-oj-db`（docker 网络内），SQL 日志和接口文档（knife4j + springdoc）全关、session/cookie 24 小时、HikariCP 池 10、响应压缩开、codesandbox.url 指向沙箱服务器内网地址（如 CODESANDBOX_PROD_URL_PLACEHOLDER:8100，部署时可按需覆盖）。
-- `application-test.yml`：占位配置（my_db 等），实际使用需替换。
+- `src/test/resources/application-test.yml`：测试专用，叠加在 dev 之上，只关闭判题调度器。
 
-日志由 `logback-spring.xml` 管理：dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚、留 30 天）+ ERROR 单独文件。
+日志由 `logback-spring.xml` 管理：dev 控制台 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚、留 30 天）+ ERROR 单独文件；其他情况（单独 test、未指定 profile）仅控制台。请求日志切面 `LogInterceptor` 会打印接口入参的 toString，**含密码的字段必须加 `@ToString.Exclude`**（见 `PasswordToStringTest`）。
 
 `codesandbox.type` 可选 `remote` / `example` / `thirdParty`（注意 Factory 里 case 是 `thirdParty` 驼峰）；`codesandbox.url` 仅 remote 生效，且**不含 `/executeCode` 后缀**（RemoteCodeSandbox 会自行拼接路径）。`codesandbox.timeout` 位于公共配置，默认 60000 ms，同时用于 HTTP 连接和读取超时。`judge.queue.*` 也在公共配置：`concurrency`（判题并发上限）、`poll-interval-ms`（轮询间隔）、`stale-running-minutes`（卡死 RUNNING 重置阈值）。
 
 ## Docker 部署
 
-- `Dockerfile`：amazoncorretto:21-alpine。**构建前需先把 `target/my-oj-0.0.1.jar` 复制到项目根目录**（Dockerfile `COPY my-oj-0.0.1.jar app.jar` 从构建上下文根取 jar）。
-- `docker-compose.yml`：mysql:8（宿主机 3307）+ 后端服务，command 激活 prod profile（`--spring.profiles.active=prod`）并用 CLI 参数覆盖 codesandbox 配置（`--codesandbox.url` / `--codesandbox.type`）。
-- `nginx.conf`：反代到后端 8101。
+- `deploy/oj-backend/Dockerfile`：amazoncorretto:21-alpine，镜像固定 `SPRING_PROFILES_ACTIVE=prod`。构建前把 `target/my-oj.jar`（pom 固定 finalName）复制为 `deploy/oj-backend/my-oj.jar`。
+- `deploy/docker-compose.yml`：mysql:8.4（宿主机 127.0.0.1:3307）+ 后端 + 前端 nginx（前端目录 `deploy/oj-frontend/` 不在本仓库），command 激活 prod profile 并用 CLI 参数覆盖数据源和 codesandbox 配置。
+- `deploy/docker-compose.dev.yml`：仅本地开发用的 MySQL，与生产无关。

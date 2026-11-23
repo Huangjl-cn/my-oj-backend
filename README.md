@@ -51,34 +51,43 @@ flowchart LR
 
 ## 快速开始
 
-**前置条件**：JDK 21、Maven 3.6+、MySQL
+**前置条件**：JDK 21、Maven 3.6.3+；开发数据库用 Docker 一键启动（或自备 MySQL 8）。clone 后不需要创建任何配置文件。
 
 ```bash
-# 1. 建库（含默认管理员 admin / 12345678）
-mysql -uroot -p < sql/create_table.sql
+# 1. 启动开发数据库（MySQL 8.4，账号 root / oj_dev；首次启动自动建表，并创建管理员 admin / 12345678）
+docker compose -f deploy/docker-compose.dev.yml up -d
 
-# 2. 在根目录创建 .env（已被 gitignore，敏感信息不入库）
-#    MYSQL_PASSWORD=你的数据库密码
-#    CODESANDBOX_AUTH_KEY_ID=sandbox-key-dev-2026
-#    CODESANDBOX_AUTH_PRIVATE_KEY=开发沙箱私钥
-
-# 3. 启动
+# 2. 启动后端（自动激活 dev profile，默认使用模拟沙箱，监听 127.0.0.1:8102）
 mvn spring-boot:run
 ```
 
-访问接口文档：http://localhost:8102/api/doc.html
+- **没有 Docker**：自行安装 MySQL 8，执行 `mysql -uroot -p < sql/create_table.sql`；root 密码不是 `oj_dev` 时，用环境变量 `MYSQL_PASSWORD` 覆盖。
+- **在 IDE 里运行** `MainApplication`：加 VM 参数 `-Dspring.profiles.active=dev`。
+- **联调真实沙箱**（[my-oj-sandbox](https://github.com/Huangjl-cn/my-oj-sandbox)）：`CODESANDBOX_TYPE=remote CODESANDBOX_URL=http://<沙箱地址>:8100 mvn spring-boot:run`。开发用的签名密钥对已内置，与沙箱的 dev 配置配对。
+- **其他开发配置**都可以用环境变量覆盖，见 `src/main/resources/application-dev.yml`；也可以在项目根目录建 `config/application-dev.yml`（已被 gitignore）。
+
+接口文档：http://localhost:8102/api/doc.html
+
+## 测试
+
+```bash
+mvn test   # 不依赖数据库和沙箱
+
+# 调用真实沙箱的集成测试默认跳过，需要时：
+RUN_SANDBOX_TESTS=true CODESANDBOX_URL=http://<沙箱地址>:8100 mvn test -Dtest=CodeSandboxTest
+```
 
 ## Docker 部署
 
 ```bash
 mvn clean package
-cp target/my-oj-0.0.1.jar deploy/oj-backend/my-oj.jar
+cp target/my-oj.jar deploy/oj-backend/my-oj.jar
 cd deploy
 # 准备 .env：MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / CODESANDBOX_URL / CODESANDBOX_AUTH_KEY_ID / CODESANDBOX_AUTH_PRIVATE_KEY
 docker compose up -d
 ```
 
-MySQL（3307）+ 后端（8101）一键启动，prod profile 下接口文档与 SQL 日志默认关闭。
+MySQL（3307）+ 后端（8101）一键启动，镜像固定使用 prod profile，接口文档与 SQL 日志默认关闭。
 
 ## 项目结构
 

@@ -20,14 +20,15 @@ Keep `WAITING -> RUNNING -> SUCCEED|FAILED` and the sandbox boundary explicit. A
 
 ## Build, Test, and Development Commands
 
-- `mvn clean package` compiles, tests, and creates `target/my-oj-0.0.1.jar`.
-- `mvn spring-boot:run` starts the default `dev` profile on port 8102 with the `/api` context path.
-- `mvn test` runs the complete JUnit 5 suite.
-- `mvn "-Dtest=!CodeSandboxTest" test` runs the offline suite without the live sandbox integration class.
+- `mvn clean package` compiles, tests, and creates `target/my-oj.jar` (fixed `finalName`).
+- `mvn spring-boot:run` starts with the `dev` profile (activated by the Maven plugin; `application.yml` sets no default profile) on `127.0.0.1:8102` with the `/api` context path.
+- `mvn test` runs the complete JUnit 5 suite offline: no database or sandbox is needed.
+- `RUN_SANDBOX_TESTS=true CODESANDBOX_URL=http://<sandbox>:8100 mvn test -Dtest=CodeSandboxTest` also runs the live sandbox integration test.
 - `mvn test -Dtest=CodeSandboxTest` runs one test class.
-- `docker compose up -d` starts MySQL and the packaged backend; follow the Dockerfile's root-JAR requirement first.
+- `docker compose -f deploy/docker-compose.dev.yml up -d` starts the local development MySQL (root / oj_dev, schema created on first start).
+- In `deploy/`, `docker compose up -d` starts the production stack; copy `target/my-oj.jar` to `deploy/oj-backend/my-oj.jar` first.
 
-Local development requires JDK 21, Maven, MySQL, and the schema from `sql/create_table.sql`. Development API docs are at `http://localhost:8102/api/doc.html`.
+Local development requires JDK 21, Maven, and a MySQL 8 database (use the dev compose file above). No local configuration files are needed: `application-dev.yml` holds every development default, including a dev-only sandbox signing key pair; override per machine with environment variables or an ignored `config/application-dev.yml`. When running `MainApplication` from an IDE, add `-Dspring.profiles.active=dev`. Development API docs are at `http://localhost:8102/api/doc.html`.
 
 ## Coding Style & Naming Conventions
 
@@ -35,7 +36,7 @@ Use four-space indentation and existing Spring/Lombok patterns. Name classes in 
 
 ## Testing Guidelines
 
-Use JUnit 5 with Spring Boot Test. Add focused tests beside the corresponding package and cover both success and validation paths. `CodeSandboxTest.executeCode` calls an external sandbox and will fail when that service is unavailable; prefer the `example` sandbox for offline tests. There is no configured coverage threshold.
+Use JUnit 5 with Spring Boot Test. Add focused tests beside the corresponding package and cover both success and validation paths. Tests that load a Spring context use `@ActiveProfiles({"dev", "test"})`; the `test` profile disables the judge dispatcher. `CodeSandboxTest.executeCode` calls a live sandbox and only runs when `RUN_SANDBOX_TESTS=true`; prefer the `example` sandbox for other tests. There is no configured coverage threshold.
 
 ## Commit & Pull Request Guidelines
 
@@ -43,4 +44,4 @@ History contains only short initialization messages, so no formal convention is 
 
 ## Security & Configuration
 
-Do not commit real database passwords, sandbox credentials, or production addresses. Keep profile-specific values out of shared configuration and override sensitive deployment settings through the deployment environment. Never run submitted code inside this backend; use the isolated remote sandbox boundary.
+Do not commit real database passwords, sandbox credentials, or production addresses. The only credentials allowed in the repository are dev-only ones that reach local development resources, clearly labelled as such (see `application-dev.yml`). Request DTO and entity password fields must use `@ToString.Exclude`, because `LogInterceptor` logs request arguments. Keep profile-specific values out of shared configuration and override sensitive deployment settings through the deployment environment. Never run submitted code inside this backend; use the isolated remote sandbox boundary.
