@@ -1,63 +1,52 @@
-# 沙箱调用鉴权（ECDSA 请求签名）接入指南
+# 沙箱调用鉴权（ECDSA 请求签名）
 
-从「请求头带静态密钥」升级为 ECDSA 请求签名：后端持私钥签名，沙箱持公钥验签，
-配合时间窗与 nonce 去重实现防伪造、防篡改、防重放。两端均无第三方依赖。
+后端用私钥给每个请求签名，沙箱用公钥验签，再配合时间窗和 nonce 去重，防止伪造、篡改和重放。沙箱只持有公钥，不持有任何秘密。
 
 ## 协议
 
-- 请求头：`X-Sandbox-Key-Id` / `X-Sandbox-Timestamp` / `X-Sandbox-Nonce` / `X-Sandbox-Signature`
-- 规范化字符串（被签名的内容）：`timestamp + "\n" + nonce + "\n" + sha256Hex(body)`
-  - `timestamp`：epoch 毫秒；`nonce`：16 字节随机数（Base64 URL-safe 无 padding）
-  - `sha256Hex(body)`：请求体按 UTF-8 字节算 SHA-256 的小写十六进制串
-- 签名算法：`SHA256withECDSA`（secp256r1 曲线），签名 Base64 编码
-- 验签顺序（任一失败返回 401）：头齐全 → key-id 匹配 → 时间窗 ±300s → nonce 未重复 → 验签
+- 请求头：`X-Sandbox-Key-Id`、`X-Sandbox-Timestamp`、`X-Sandbox-Nonce`、`X-Sandbox-Signature`。
+- 被签名的字符串：`timestamp + "\n" + nonce + "\n" + sha256Hex(body)`。
+  - `timestamp`：epoch **毫秒**。
+  - `nonce`：16 字节随机数，Base64 URL-safe、无 padding。
+  - `sha256Hex(body)`：请求体 UTF-8 字节的 SHA-256，小写十六进制。
+- 签名算法：`SHA256withECDSA`（secp256r1 曲线），签名做 Base64 编码。
+- 沙箱验签顺序，任何一步失败都返回 401：请求头齐全 → key-id 匹配 → 时间戳在 ±`clock-skew` 秒内 → nonce 没用过 → 验签通过。
+- `/health` 不需要鉴权。
 
-## 后端（oj-backend）
+实现：后端 `judge/codesandbox/auth/SandboxAuthSigner`（装配见 `config/SandboxAuthConfig`）；沙箱 `auth/SandboxAuthFilter`。协议常量两边必须一致。
 
-- 签名器：`judge.codesandbox.auth.SandboxAuthSigner`，装配：`config.SandboxAuthConfig`
-- 配置：
-  ```yaml
-  codesandbox:
-    auth:
-      key-id: sandbox-key-dev-2026          # 与沙箱侧保持一致
-      private-key: <Base64 PKCS#8>          # 生产用环境变量 CODESANDBOX_AUTH_PRIVATE_KEY 注入
-  ```
-- 开发环境已内置测试密钥对（见 `application-dev.yml`），生产密钥缺失时启动即失败（fail-fast）
-- 生成新密钥：运行 `src/test/java/.../judge/codesandbox/auth/SandboxAuthKeygenTool.java` 的 main 方法
+## 密钥配置
 
-## 沙箱（oj-code-sandbox）
+| 环境 | 后端（私钥） | 沙箱（公钥） |
+|---|---|---|
+| 开发 | `application-dev.yml` 内置开发专用密钥对，key-id `sandbox-key-dev-2026` | `application-dev.yml` 内置对应公钥 |
+| 生产 | 环境变量 `CODESANDBOX_AUTH_KEY_ID`、`CODESANDBOX_AUTH_PRIVATE_KEY`（见 `deploy/.env.example`），缺失时启动失败 | `application-prod.yml` 里的生产公钥，key-id `sandbox-key-prod-2026` |
 
-- 验签过滤器：`com.hjl.ojcodesandbox.auth.SandboxAuthFilter`（本目录 Java 文件为同步副本）
-- 鉴权统一由 Filter 处理，Controller 不做静态密钥检查；`/health` 探活端点放行（install.sh 健康检查、监控探针依赖）
-- Filter 初始化用 `InitializingBean#afterPropertiesSet`（不用 `@PostConstruct` 注解：Spring Boot 2.7 fat jar 下嵌入式 Tomcat 实例化 Filter 时会扫描该注解并报 Invalid annotation）
-- 沙箱配置（`application.yml`）：
-  ```yaml
-  codesandbox:
-    auth:
-      enabled: false                 # 过渡开关：后端切换为签名调用后一起打开
-      key-id: sandbox-key-dev-2026   # 与后端一致
-      public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujoSoLNpNzIcqf6diJhgPPccfqroPqBFTwxm51jt9cb+JmO8/LLsTgUqRkcLA7Xf3SEpl3TUrzYNdv7K0Nv07w==
-      clock-skew: 300                # 秒，两端需 NTP 校时
-  ```
-  上面这份公钥与后端 `application-dev.yml` 里的开发私钥配套，生产公钥由后端提供后替换。
-- 自测：`enabled: true` 时无鉴权头调用 `/executeCode` 返回 401，带签名头（由后端发起）正常执行。沙箱侧单测 `SandboxAuthFilterTest` 用后端开发私钥构造签名，覆盖验签通过、缺头、未知 key-id、时间戳超窗、nonce 重放、请求体/签名篡改、health 放行、开关关闭放行各分支。
+开发私钥是公开的，只能用于本机开发；生产沙箱只信任生产公钥，开发私钥在生产无效。两边的 `clock-skew` 默认 300 秒，服务器需要校准时间（NTP）。
 
-## 部署顺序（重要）
+## 生成密钥对
 
-后端与沙箱必须同批启用，否则旧沙箱不认识新头 / 新沙箱拒绝旧请求。
-推荐步骤：沙箱以 `enabled: false` 部署（放行所有请求）→ 后端部署签名版本（新头发出，沙箱放行不校验）→ 约定时刻沙箱 `enabled: true` 并确认后端配置生效。
+运行后端测试目录下的 `SandboxAuthKeygenTool`（IDE 里直接运行 main 方法），或在项目根目录执行：
+
+```bash
+java src/test/java/com/hjl/oj/judge/codesandbox/auth/SandboxAuthKeygenTool.java
+```
+
+输出 Base64 编码的私钥（PKCS#8）和公钥（X.509）：私钥给后端，公钥给沙箱，两边的 key-id 要一致。
 
 ## 密钥轮换
 
-1. 用 `SandboxAuthKeygenTool` 生成新密钥对
-2. 沙箱配置里新旧 key-id 双持（key-id 用于区分）
-3. 后端切到新私钥与新 key-id，观察无 401
-4. 稳定后沙箱删除旧公钥
+沙箱同一时间只信任一个 key-id，所以两端需要一起切换，切换期间的判题请求会失败。请在空闲时段操作：
 
-应急泄露：立即生成新密钥对，沙箱只配新公钥、后端切新私钥，旧私钥即刻作废。
+1. 生成新密钥对和新 key-id。
+2. 沙箱：更新 `application-prod.yml` 的 key-id 和公钥，重新打包部署。
+3. 后端：更新服务器 `deploy/.env` 的 `CODESANDBOX_AUTH_KEY_ID` 和 `CODESANDBOX_AUTH_PRIVATE_KEY`，重启后端容器。
+4. 提交一次代码，确认判题正常、沙箱日志没有 401。
 
-## 边界说明
+私钥泄露时立即按上面的步骤换新密钥，旧私钥随即失效。
 
-- 请求体仍为明文传输（内容不是秘密）；如需防嗅探，升级 HTTPS/TLS，与本方案正交
-- 响应方向不验签，若需防判题结果被篡改可给沙箱也配一对密钥反向签名（二期加固）
-- nonce 缓存为内存态，沙箱重启后 10 分钟窗口内存在极小重放窗口，判题场景可接受
+## 边界
+
+- 请求体是明文传输（内容不是秘密）；需要防嗅探时改用 HTTPS，与签名方案互不影响。
+- 响应方向没有签名。
+- nonce 缓存在沙箱内存中，沙箱重启后的时间窗内理论上可以重放一次已发出的请求，判题场景可以接受。

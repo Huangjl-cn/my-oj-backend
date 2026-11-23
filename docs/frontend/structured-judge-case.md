@@ -1,10 +1,6 @@
 # 结构化判题用例前端对接说明
 
-## 背景
-
-当前题目用例由管理员直接填写输入、输出字符串，后端再与代码沙箱返回的字符串做完全相等比较。数组等值在不同语言中的输出格式并不一致，例如 `[1, 2]` 与 `[1,2]` 语义相同，却可能被判为答案错误；手工填写空格也容易产生无效用例。
-
-本次调整将题目用例改为结构化数据。前端负责编辑体验，后端负责类型校验、存储、执行参数编码和语义比较。旧用例格式不再兼容，已有题目需要重新编辑保存。
+题目用例是结构化数据：每道题声明输入参数和输出的类型，用例按类型填写值。前端负责编辑体验，后端负责类型校验、存储、执行参数编码和语义比较（例如 `[1, 2]` 与 `[1,2]` 视为相同）。
 
 ## 获取支持的值类型
 
@@ -39,7 +35,7 @@ GET /api/question/supported-judge-types
 
 ## 新建和编辑题目
 
-`POST /api/question/add`、`POST /api/question/edit` 和 `POST /api/question/update` 的 `judgeCase` 改为以下对象：
+`POST /api/question/add`、`POST /api/question/edit` 和 `POST /api/question/update` 的 `judgeCase` 是以下对象：
 
 ```json
 {
@@ -65,7 +61,7 @@ GET /api/question/supported-judge-types
 
 每道题只定义一次输入参数和输出类型，所有用例共用该定义。`inputs` 的顺序必须与 `inputDefinitions` 一致。
 
-## 页面调整
+## 页面要求
 
 1. 新建、编辑页面加载后请求支持类型接口。
 2. 增加输入参数定义编辑器：参数名称、参数类型、增删和排序。
@@ -82,7 +78,7 @@ GET /api/question/supported-judge-types
 GET /api/question/get?id=题目ID
 ```
 
-该接口的 `data` 改为 `QuestionManageVO`，其中 `tags`、`judgeConfig` 和 `judgeCase` 均为结构化值，不再要求前端手动解析数据库中的 JSON 字符串。权限仍为题目创建者或管理员。
+该接口的 `data` 是 `QuestionManageVO`，其中 `tags`、`judgeConfig` 和 `judgeCase` 均为结构化值，不再要求前端手动解析数据库中的 JSON 字符串。权限仍为题目创建者或管理员。
 
 后端会再次校验参数数量、名称、类型和值。未知类型、类型不匹配、空用例或不规则二维数组会返回参数错误。
 

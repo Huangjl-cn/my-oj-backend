@@ -1,47 +1,105 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
+本文件是 AI 编码助手在本仓库工作的说明，也是项目开发约定的唯一来源（CLAUDE.md 只引用本文件）。面向人的介绍和快速开始见 README.md。
 
-This is a single-module Spring Boot 3.5 backend built with Java 21 and Maven. Production code lives under `src/main/java/com/hjl/oj`: HTTP endpoints in `controller`, business rules in `service`, persistence interfaces in `mapper`, and domain types in `model/{entity,dto,vo,enums}`. Keep sandbox adapters and language strategies in the `judge` pipeline.
+## 项目概述
 
-Resources are in `src/main/resources`; MyBatis XML mappings use `resources/mapper`, and settings use `application.yml` plus `application-{profile}.yml`. Tests mirror production packages under `src/test/java`. Database bootstrap SQL is in `sql/create_table.sql`; container files remain at the root.
+在线判题系统（Online Judge）后端。技术栈：**Spring Boot 3.5 + Java 21 + MyBatis-Plus 3.5**（spring-boot3 starter + mybatis-plus-jsqlparser 分页插件）+ Hutool + Knife4j（OpenAPI 3 + Jakarta）。没有 Spring Security，鉴权用自定义 session + AOP 切面；不依赖 Redis。
 
-## Architecture & Judge Workflow
+用户代码在独立的代码沙箱 [my-oj-sandbox](https://github.com/Huangjl-cn/my-oj-sandbox) 中执行，接口约定见 `docs/sandbox-contract.md`。**不要在本后端里运行用户提交的代码。**
 
-The active submission endpoints are in `QuestionController` under `/question/question_submit/*`; `QuestionSubmitController` is deprecated and should not receive new behavior. Preserve this judging flow when changing submission code:
+## 常用命令
 
-1. `QuestionSubmitServiceImpl.doQuestionSubmit` validates the language and question, stores a `WAITING` submission, then schedules `JudgeService.processSubmission` on the dedicated Java 21 virtual-thread `judgeExecutor`. The HTTP response contains only the generated submission ID.
-2. `JudgeServiceImpl` atomically claims the task with `WAITING -> RUNNING`; a conditional update prevents duplicate execution. It then runs the sandbox and result pipeline.
-3. `JudgeServiceImpl` validates structured judge cases and encodes each case as `cases[].args[]`. `CodeSandboxFactory` selects `remote`, `example`, or `thirdParty`; `CodeSandboxProxy` adds logging. The remote adapter sends every supported language to `/executeCode`, while the sandbox only compiles and executes the exact argument vectors.
-4. `JudgeManager.applyStrategy` resolves an enum-keyed language strategy. `AbstractJudgeStrategy` owns execution-error and resource-limit checks, language strategies only supply justified resource allowances, and the shared `JudgeOutputComparator` parses JSON output and compares typed values.
-5. A completed pipeline conditionally changes `RUNNING -> SUCCEED`; an exception attempts `RUNNING -> FAILED`. `SUCCEED` means judging completed, not Accepted. The verdict, first wrong case, or sandbox diagnostic is carried in `judgeInfo.message`.
+```bash
+docker compose -f deploy/docker-compose.dev.yml up -d   # 开发库：MySQL 8.4，root / oj_dev，首次启动自动执行 sql/create_table.sql
+mvn spring-boot:run          # 本地运行：pom 自动激活 dev profile，127.0.0.1:8102，context-path /api
+mvn test                     # 全部测试，不依赖数据库和沙箱
+mvn test -Dtest=类名          # 单个测试类
+mvn clean package            # 构建，产物 target/my-oj.jar
+```
 
-Keep `WAITING -> RUNNING -> SUCCEED|FAILED` and the sandbox boundary explicit. Any concurrency, retry, or failure-handling change must test duplicate execution and terminal states. Question fields `tags`, `judgeCase`, and `judgeConfig`, plus submission `judgeInfo`, are JSON stored in text columns. Structured `judgeCase` values use `JudgeCaseDataService`; preserve the existing conversions for the other fields.
+- 前置条件：JDK 21、Maven 3.6.3+。clone 后不需要任何配置文件。
+- 在 IDE 里运行 `MainApplication` 时加 VM 参数 `-Dspring.profiles.active=dev`。
+- 接口文档（仅 dev）：`http://localhost:8102/api/doc.html`。
+- 建表脚本 `sql/create_table.sql` 创建 `oj_db`、四张表（user / question / question_starter_code / question_submit）和开发用管理员 admin / 12345678，可重复执行。它是表结构的唯一来源，改表结构时同步修改它。
 
-## Build, Test, and Development Commands
+## 架构
 
-- `mvn clean package` compiles, tests, and creates `target/my-oj.jar` (fixed `finalName`).
-- `mvn spring-boot:run` starts with the `dev` profile (activated by the Maven plugin; `application.yml` sets no default profile) on `127.0.0.1:8102` with the `/api` context path.
-- `mvn test` runs the complete JUnit 5 suite offline: no database or sandbox is needed.
-- `RUN_SANDBOX_TESTS=true CODESANDBOX_URL=http://<sandbox>:8100 mvn test -Dtest=CodeSandboxTest` also runs the live sandbox integration test.
-- `mvn test -Dtest=CodeSandboxTest` runs one test class.
-- `docker compose -f deploy/docker-compose.dev.yml up -d` starts the local development MySQL (root / oj_dev, schema created on first start).
-- In `deploy/`, `docker compose up -d` starts the production stack; copy `target/my-oj.jar` to `deploy/oj-backend/my-oj.jar` first.
+经典分层：controller → service → mapper；`model/` 下分 entity / dto / vo / enums；`common/` 统一返回（BaseResponse + ResultUtils + ErrorCode）；`exception/` 全局异常（BusinessException + GlobalExceptionHandler）；`aop/` 请求日志和权限切面。
 
-Local development requires JDK 21, Maven, and a MySQL 8 database (use the dev compose file above). No local configuration files are needed: `application-dev.yml` holds every development default, including a dev-only sandbox signing key pair; override per machine with environment variables or an ignored `config/application-dev.yml`. When running `MainApplication` from an IDE, add `-Dspring.profiles.active=dev`. Development API docs are at `http://localhost:8102/api/doc.html`.
+### 判题模块（`judge/`）
 
-## Coding Style & Naming Conventions
+1. **提交即入队 + 有界调度**：`QuestionSubmitServiceImpl.doQuestionSubmit` 校验语言和题目，写入 WAITING 记录后直接返回提交 ID，不做异步派发——`question_submit` 表就是队列（WAITING 按 id 升序即提交顺序，雪花 id 单调递增）。`judge/queue/JudgeTaskDispatcher` 每轮（`judge.queue.poll-interval-ms`，默认 1s）按 id 升序领取 WAITING 记录，用 `Semaphore`（`judge.queue.concurrency`，默认 4）限制同时进行的沙箱调用数（削峰填谷，保护沙箱侧容器内存），任务在专用的 Java 21 虚拟线程 `judgeExecutor` 上执行。轮询和排队计数依赖 `idx_status_id (status, id)` 索引。排队人数通过 `/question/question_submit/queue/status` 查询（`aheadCount` = 前方 WAITING 数，`queueLength` = 队列总长，与实际派发顺序一致；登录即可访问；Long 字段序列化为字符串）。
+2. **编排**：`JudgeServiceImpl.processSubmission` 用条件更新原子抢占 `WAITING → RUNNING`（抢占失败说明已被其他线程处理，属正常竞争，记 debug 后返回 null）；`runJudgePipeline` 调用沙箱、构建上下文、调用 `JudgeManager.applyStrategy` 并回写结果。成功时 `RUNNING → SUCCEED`，异常时尝试 `RUNNING → FAILED`。多实例部署时重复派发靠原子抢占收敛，不会重复判题。
+3. **崩溃恢复（at-least-once）**：启动后首轮轮询自动续判遗留的 WAITING 记录；每 60s 把 RUNNING 超过 `judge.queue.stale-running-minutes`（默认 10 分钟，必须远大于判题最长耗时）的记录重置回 WAITING 重判。
+4. **沙箱**（工厂 + 代理模式）：`CodeSandboxFactory` 按 `codesandbox.type` 创建实现，`CodeSandboxProxy` 包一层，在 DEBUG 级别记录完整的请求和响应。两个实现：
+   - `RemoteCodeSandbox`：调用真实沙箱的 `/executeCode`，所有语言走同一个接口；每个请求用 ECDSA 签名（`SandboxAuthSigner`，协议见 `docs/sandbox-auth/README.md`）；
+   - `ExampleCodeSandbox`：本地模拟，不联网，判题结果是假的，只用于跑通流程。
+5. **策略**（策略模式 + 模板方法）：`AbstractJudgeStrategy.evaluate` 统一处理执行错误和资源限制；`JudgeManager` 用语言枚举注册表选择策略，再由共享的 `JudgeOutputComparator` 解析模板输出的 JSON 并按声明的类型比较。C++ 使用题目的基准限制，Go 额外 16 MB，Java 额外 64 MB / 2000 ms，Python 额外 32 MB / 2000 ms，JavaScript 额外 32 MB / 1000 ms。
+6. **结构化用例**：题目的 `judgeCase` 保存参数定义、输出定义和结构化用例。`JudgeInputEncoder` 把每条用例编码为 `cases[].args[]`；沙箱只原样传递参数并返回 stdout，不理解 OJ 的值类型，也不接收预期答案。
 
-Use four-space indentation and existing Spring/Lombok patterns. Name classes in PascalCase, methods and fields in camelCase, constants in UPPER_SNAKE_CASE, and tests as `*Test`. Put request models in `model/dto/<feature>`. Preserve controller-service-mapper boundaries and use `BaseResponse`, `ResultUtils`, and `BusinessException` for API behavior. No formatter or linter is configured; match nearby code.
+### 提交归档与统计（`QuestionSubmitServiceImpl` + `QuestionSubmitMapper.xml`）
 
-## Testing Guidelines
+1. **全部提交视图** `list/page`：请求用独立的 `QuestionSubmitArchiveQueryRequest`（不继承 PageRequest，sortOrder 默认 descend；`my/list/page` 使用的 `QuestionSubmitQueryRequest` 保持不动）。`judgeResult` / `sortField` / `sortOrder` 走白名单校验（非法抛 PARAMS_ERROR）；判题结果语义的唯一来源是 `JudgeResultEnum`（含 SQL 片段常量和 `from(status, message)` 派生）。排序表达式（含 JSON_EXTRACT）通过 `wrapper.last("ORDER BY ...")` 整体拼接，缺失指标排在最后，同值按 createTime 倒序。响应平铺 questionTitle / questionTags / userName / userAvatar 和派生的 judgeResult，题目和用户摘要用批量 `listByIds` 预取（不要改回 N+1）。
+2. **按题聚合视图** `group/page`：XML 中的自定义 SQL `selectQuestionGroupPage` / `countQuestionGroup`（窗口函数 `ROW_NUMBER` + `MIN(...) OVER`）；total 是题目数（`setSearchCount(false)` + 显式 count）；bestTime / bestMemory 分别独立取最小值（可能来自不同提交），统计范围随 `judgeResult` 等筛选变化，没有有效指标的行自动排除，null 排在最后。
+3. **指标击败率** `rank`：对比人群是同题、同语言、仅 Accepted（复用 `JudgeResultEnum.ACCEPTED.getSqlFragment()`）、含本人；"超过"按指标 `>=` 本次提交计（持平计入，首次通过为 1/1 = 100%）。只返回 Total / Beaten 计数，比例由前端计算。
+4. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
 
-Use JUnit 5 with Spring Boot Test. Add focused tests beside the corresponding package and cover both success and validation paths. Tests that load a Spring context use `@ActiveProfiles({"dev", "test"})`; the `test` profile disables the judge dispatcher. `CodeSandboxTest.executeCode` calls a live sandbox and only runs when `RUN_SANDBOX_TESTS=true`; prefer the `example` sandbox for other tests. There is no configured coverage threshold.
+### 鉴权
 
-## Commit & Pull Request Guidelines
+- 登录态存在 session：`UserService.getLoginUser(request)` 读 session 属性 `user_login`（`UserConstant.USER_LOGIN_STATE`），登出即删除该属性。
+- 接口权限：`@AuthCheck(mustRole = "admin")` 注解 + `AuthInterceptor` 切面校验。
+- 提交代码公开（产品决策"公开代码促进学习"）：`list/page`、`group/page`、`rank`、`get` 登录即可访问，提交的 `code` 对所有登录用户可见；`userAccount` 脱敏不返回（与 UserVO 一致）。
 
-History contains only short initialization messages, so no formal convention is established. Use concise, imperative subjects such as `fix judge status transition`. Pull requests should explain behavior changes, list configuration or schema impacts, link issues, and include commands run. Add examples when API contracts change.
+### 重要约定
 
-## Security & Configuration
+- **提交相关接口都在 `QuestionController`**：`/question/question_submit/do`、`list/page`、`group/page`、`rank`、`get`、`queue/status`、`my/list/page`、`my/get`。
+- **JSON 以文本存库**：`question.tags` / `judgeCase` / `judgeConfig` 和 `question_submit.judgeInfo` 是 text 列存 JSON 字符串；结构化 `judgeCase` 统一经 `JudgeCaseDataService` 校验和转换，其他字段沿用 Hutool `JSONUtil`。
+- **Long 精度**：`JsonConfig` 全局把 Long 序列化为字符串（防止前端 JS 精度丢失）。
+- **`map-underscore-to-camel-case: false`**：实体字段名必须与数据库列名完全一致（如 `userAccount`）。
+- **逻辑删除**：全局 `isDelete` 字段（MyBatis-Plus 全局配置）。
+- **状态与结果分离**：提交状态 `SUCCEED` 表示判题流程完成，不代表 Accepted；最终结果、首个错误用例或沙箱诊断在 `judgeInfo.message`，可能是多行文本。
+- **判题并发**：`updateStatusIfCurrent` 用单条条件 SQL 保证 `WAITING → RUNNING → SUCCEED|FAILED`；并发上限由 `JudgeTaskDispatcher` 的许可数控制，没有分布式锁。修改并发、重试或失败处理时，必须测试重复执行和终态。
 
-Do not commit real database passwords, sandbox credentials, or production addresses. The only credentials allowed in the repository are dev-only ones that reach local development resources, clearly labelled as such (see `application-dev.yml`). Request DTO and entity password fields must use `@ToString.Exclude`, because `LogInterceptor` logs request arguments. Keep profile-specific values out of shared configuration and override sensitive deployment settings through the deployment environment. Never run submitted code inside this backend; use the isolated remote sandbox boundary.
+## 配置（`src/main/resources/`）
+
+公共项在 `application.yml`，环境差异在 profile 文件中覆盖。**`application.yml` 不设默认 profile**：`mvn spring-boot:run` 由 pom 自动激活 dev，IDE 运行需加 `-Dspring.profiles.active=dev`，Docker 镜像固定 `SPRING_PROFILES_ACTIVE=prod`。不指定 profile 时应用因缺少数据库配置而启动失败，不会退回开发配置。
+
+- `application-dev.yml`：写全开发默认值，clone 即可运行。监听 127.0.0.1:8102（`SERVER_ADDRESS` 可覆盖）；MySQL `localhost:3306/oj_db`，root / oj_dev（`MYSQL_URL` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 可覆盖）；SQL 日志和 Knife4j 打开；沙箱默认 `example`，联调真实沙箱设 `CODESANDBOX_TYPE=remote` 和 `CODESANDBOX_URL`（默认 `http://localhost:8100`）。内置**开发专用**签名密钥对（key-id `sandbox-key-dev-2026`，与沙箱 dev 公钥配对；私钥已公开，生产沙箱不信任）。本机差异用环境变量或项目根目录的 `config/application-dev.yml`（已 gitignore）覆盖，不要改仓库里的文件。
+- `application-prod.yml`：生产配置的唯一来源。端口 8101，数据库 `my-oj-db:3306/oj_db`，账号 `oj_app`；SQL 日志和接口文档关闭，session 24 小时，HikariCP 池 10，响应压缩开。密码、沙箱地址和签名密钥从环境变量读取（`MYSQL_PASSWORD`、`CODESANDBOX_URL`、`CODESANDBOX_AUTH_KEY_ID`、`CODESANDBOX_AUTH_PRIVATE_KEY`），缺失时启动失败。
+- `src/test/resources/application-test.yml`：叠加在 dev 之上，只关闭判题调度器（`judge.queue.enabled=false`）。
+
+公共配置中的其他项：`codesandbox.timeout`（毫秒，同时用作 HTTP 连接和读取超时）；`codesandbox.url` 不带 `/executeCode` 后缀；`judge.queue.*`（`enabled`、`concurrency`、`poll-interval-ms`、`stale-running-minutes`）。`codesandbox.type` 只有 `remote` 和 `example` 两个取值。
+
+日志由 `logback-spring.xml` 管理：dev 控制台、`com.hjl.oj` 为 DEBUG；prod 控制台 INFO + 滚动文件（`logs/`，按天滚动，保留 30 天）+ 单独的 ERROR 文件；其他情况（单独的 test、未指定 profile）只输出到控制台。
+
+## 测试
+
+- JUnit 5 + Spring Boot Test + Mockito。测试放在与被测代码相同的包下，覆盖成功和校验失败两类路径。
+- 加载 Spring 上下文的测试统一用 `@ActiveProfiles({"dev", "test"})`，上下文不连数据库。
+- `CodeSandboxTest` 调用真实沙箱，默认跳过；需要时设 `RUN_SANDBOX_TESTS=true`，沙箱地址用 `CODESANDBOX_URL`。其他测试用 mock 或本机临时端口（参考 `RemoteCodeSandboxTest`）。
+- 测试类命名 `*Test`，方法名描述被测行为。
+
+## 编码约定
+
+- 四空格缩进，沿用现有的 Spring 和 Lombok 写法；类名 PascalCase，方法和字段 camelCase，常量 UPPER_SNAKE_CASE。
+- 请求模型放在 `model/dto/<功能>`；接口返回统一用 `BaseResponse` / `ResultUtils`，错误抛 `BusinessException`。
+- **密码字段必须加 `@ToString.Exclude`**：`LogInterceptor` 会以 INFO 级别打印接口入参的 toString（见 `PasswordToStringTest`）。
+- 业务异常（4xxxx）记 warn 不打堆栈，系统错误（5xxxx）记 error。
+
+## 安全与凭据
+
+- 仓库里只允许出现开发专用、只能访问本机开发资源的凭据，并注释标明（见 `application-dev.yml`）。
+- 生产的数据库密码、沙箱签名私钥只通过服务器上的 `deploy/.env` 注入，不进仓库、镜像和日志。
+- 与环境有关的值放在 profile 配置中，不写进公共配置或代码。
+
+## 部署（`deploy/`）
+
+- `oj-backend/Dockerfile`：amazoncorretto:21-alpine，固定 `SPRING_PROFILES_ACTIVE=prod`，以非 root 用户运行。构建前把 `target/my-oj.jar` 复制为 `deploy/oj-backend/my-oj.jar`，把 `sql/create_table.sql` 复制为 `deploy/oj-backend/init.sql`（两者都不入库）。
+- `docker-compose.yml`：MySQL 8.4（宿主机 127.0.0.1:3307）+ 后端（127.0.0.1:8101）+ 前端 nginx（`deploy/oj-frontend/` 来自前端仓库，不在本仓库）。只通过环境变量传值，变量模板见 `deploy/.env.example`。应用使用 `oj_app` 账号，root 只允许容器内登录；这两项只在首次初始化数据卷时生效。
+- `docker-compose.dev.yml`：只用于本地开发的 MySQL，与生产无关。
+
+## 提交与合并请求
+
+- 提交信息用中文约定式提交：`<类型>(<范围>): <说明>`，类型如 feat、fix、docs、test、refactor、build、chore。
+- 合并请求说明行为变化、配置或表结构的影响、执行过的命令；接口契约有变化时附示例，并同步更新 `docs/sandbox-contract.md` 或 `docs/frontend/` 下的文档。

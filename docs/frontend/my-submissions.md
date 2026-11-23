@@ -38,4 +38,4 @@ GET /api/question/question_submit/my/get?id=提交ID
 3. 点击某条摘要后，用该条 `id` 请求详情，再展示代码和完整判题诊断。
 4. `status` 为 `0` 或 `1` 的记录可沿用现有轮询逻辑；达到 `2` 或 `3` 后停止轮询并刷新列表。
 
-原 `POST /api/question/question_submit/list/page` 继续作为公开的脱敏提交列表使用，其他用户的提交代码不会返回。原提交详情接口保留用于现有兼容流程，新页面查看自己的提交时优先使用严格当前用户范围的 `my/get`。
+另有面向所有登录用户的提交归档接口：`POST /api/question/question_submit/list/page`（全部提交）、`group/page`（按题聚合）和 `GET /api/question/question_submit/get`（任意提交详情）。按“公开代码促进学习”的产品决策，这些接口对登录用户返回提交代码，只隐藏 `userAccount`。查看自己的提交时优先使用上面两个只限当前用户的接口。
