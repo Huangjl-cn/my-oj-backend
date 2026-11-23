@@ -9,11 +9,6 @@ spring:
   # 数据库驱动（连接地址、账号等环境差异见各 profile 文件）
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-  # 文件上传
-  servlet:
-    multipart:
-      # 大小限制
-      max-file-size: 10MB
 server:
   servlet:
     context-path: /api

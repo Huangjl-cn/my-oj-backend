@@ -1,11 +1,12 @@
 # 生产环境配置：安全、性能优先（关闭 SQL 日志和接口文档、缩短会话、连接池调优）
+# 本文件是生产配置的唯一来源；秘密和部署相关的值从环境变量读取（compose 从 deploy/.env 传入，模板见 deploy/.env.example），
+# 引用的环境变量缺失时启动即失败。
 spring:
-  session:
-    timeout: 86400 # 24 小时
   datasource:
-    url: jdbc:mysql://my-oj-db:3306/oj_db
-    username: root
-    # 由部署环境注入，缺失时启动失败
+    # my-oj-db 是 deploy/docker-compose.yml 中的数据库服务名
+    url: jdbc:mysql://my-oj-db:3306/oj_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    # 应用专用账号，只授权 oj_db，不用 root（账号由 compose 的 MYSQL_USER 创建）
+    username: oj_app
     password: ${MYSQL_PASSWORD}
     # 连接池调优
     hikari:
@@ -39,9 +40,9 @@ knife4j:
 # 代码沙箱
 codesandbox:
   type: remote
-  # 沙箱服务器地址由部署环境注入，缺失时启动失败
+  # 沙箱服务器地址，不带 /executeCode 后缀
   url: ${CODESANDBOX_URL}
   auth:
-    # 生产密钥由部署环境注入，严禁写入仓库；缺失时应用启动即失败（fail-fast）
-    key-id: ${CODESANDBOX_AUTH_KEY_ID:}
-    private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY:}
+    # 生产密钥对，私钥严禁写入仓库；key-id 必须与沙箱生产配置一致
+    key-id: ${CODESANDBOX_AUTH_KEY_ID}
+    private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY}
