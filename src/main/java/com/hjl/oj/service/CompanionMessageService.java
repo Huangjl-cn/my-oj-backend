@@ -1,6 +1,6 @@
 package com.hjl.oj.service;
 
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import com.hjl.oj.companion.edit.CodeEditProposal;
 import com.hjl.oj.model.entity.CompanionMessage;
 import com.hjl.oj.model.vo.CompanionMessageVO;

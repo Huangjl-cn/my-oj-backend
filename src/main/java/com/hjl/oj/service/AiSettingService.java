@@ -1,6 +1,6 @@
 package com.hjl.oj.service;
 
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import com.hjl.oj.ai.key.AiCredential;
 import com.hjl.oj.model.dto.ai.AiSettingSaveRequest;
 import com.hjl.oj.model.entity.User;
