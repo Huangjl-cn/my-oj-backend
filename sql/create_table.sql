@@ -79,3 +79,54 @@ create table if not exists question_submit
     index idx_user_question_time (userId, questionId, createTime),
     index idx_status_id (status, id)
 ) comment '题目提交';
+
+-- 用户 AI 设置（每人一行；API Key 加密存储，删除 Key 时清空 Key 相关列）
+create table if not exists user_ai_setting
+(
+    id           bigint auto_increment comment 'id' primary key,
+    userId       bigint                                 not null comment '用户 id',
+    provider     varchar(32)  default 'deepseek'        not null comment 'AI 厂商',
+    model        varchar(64)                            null comment '所选模型，为空时用默认模型',
+    encryptedKey varchar(1024)                          null comment '加密后的 API Key（AES-GCM）',
+    keyHint      varchar(16)                            null comment 'API Key 后 4 位，用于页面显示',
+    hintMode     varchar(16)  default 'guided'          not null comment '提示模式：guided 循序渐进 / direct 有问必答',
+    createTime   datetime     default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime   datetime     default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    unique key uk_userId (userId)
+) comment '用户 AI 设置' collate = utf8mb4_unicode_ci;
+
+-- AI 陪练会话（每人每题一行：提示进度、模型记忆、上下文占用）
+create table if not exists companion_session
+(
+    id               bigint auto_increment comment 'id' primary key,
+    userId           bigint                                not null comment '用户 id',
+    questionId       bigint                                not null comment '题目 id',
+    hintLevel        tinyint     default 0                 not null comment '已解锁的提示等级 0-5',
+    hintTrack        varchar(16) default 'idea'            not null comment '提示方向：idea 找思路 / bug 找 bug',
+    memory           mediumtext                            null comment '模型记忆（LangChain4j 消息序列化后的 JSON）',
+    contextTokens    int         default 0                 not null comment '最近一次调用的上下文 token 数',
+    memoryUpdateTime datetime                              null comment '模型记忆最后更新时间',
+    createTime       datetime    default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime       datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    unique key uk_user_question (userId, questionId)
+) comment 'AI 陪练会话' collate = utf8mb4_unicode_ci;
+
+-- AI 陪练消息（给前端展示的对话历史，按雪花 id 排序分页）
+create table if not exists companion_message
+(
+    id            bigint auto_increment comment 'id' primary key,
+    userId        bigint                             not null comment '用户 id',
+    questionId    bigint                             not null comment '题目 id',
+    role          varchar(16)                        not null comment 'user 用户 / assistant 陪练',
+    type          varchar(16)                        not null comment 'chat 聊天 / hint 提示 / reaction 提交后反应 / solution 参考解法 / compaction 记忆整理',
+    hintLevel     tinyint                            null comment '提示等级（提示、解法）',
+    hintTrack     varchar(16)                        null comment '提示方向（提示、反应）',
+    mood          varchar(16)                        null comment '陪练心情（提交后反应）',
+    moodIntensity tinyint                            null comment '心情强度 1-3',
+    submissionId  bigint                             null comment '触发反应的提交 id',
+    content       mediumtext                         not null comment '消息内容',
+    codeEdits     mediumtext                         null comment '代码修改建议（json）',
+    createTime    datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    index idx_user_question_id (userId, questionId, id),
+    index idx_submissionId (submissionId)
+) comment 'AI 陪练消息' collate = utf8mb4_unicode_ci;
