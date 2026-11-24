@@ -12,6 +12,8 @@ import dev.langchain4j.guardrail.config.OutputGuardrailsConfig;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolArgumentsErrorHandler;
+import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -67,6 +69,9 @@ public class CompanionAssistantFactory {
                 .maxSequentialToolsInvocations(MAX_SEQUENTIAL_TOOL_CALLS)
                 .hallucinatedToolNameStrategy(request ->
                         ToolExecutionResultMessage.from(request, "没有名为 " + request.name() + " 的工具，请只使用提供的工具"))
+                // 参数写错时把原因告诉模型让它重试；工具内部的意外异常（如数据库错误）不发给模型，直接结束本轮
+                .toolArgumentsErrorHandler(ToolArgumentsErrorHandler.sendExceptionMessageToLlm())
+                .toolExecutionErrorHandler(ToolExecutionErrorHandler.failInvocationUnlessVisibleToLlm())
                 .build();
     }
 
