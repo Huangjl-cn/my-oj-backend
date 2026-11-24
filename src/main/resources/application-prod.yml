@@ -46,3 +46,7 @@ codesandbox:
     # 生产密钥对，私钥严禁写入仓库；key-id 必须与沙箱生产配置一致
     key-id: ${CODESANDBOX_AUTH_KEY_ID}
     private-key: ${CODESANDBOX_AUTH_PRIVATE_KEY}
+# AI 陪练：调用真实模型；用户 Key 的加密主密钥由部署环境注入，缺失时启动失败
+ai:
+  mode: live
+  key-encryption-key: ${AI_KEY_ENCRYPTION_KEY}

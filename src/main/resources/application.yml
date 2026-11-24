@@ -50,3 +50,33 @@ judge:
     poll-interval-ms: 1000
     # 判题中超过该分钟数视为进程中断遗留，重置回待判题重判；0 关闭（须远大于判题最大耗时）
     stale-running-minutes: 10
+# AI 陪练（LangChain4j 调用 DeepSeek，费用走用户自己的 API Key；绑定类见 ai/config/AiProperties）
+# ai.mode 与加密主密钥 ai.key-encryption-key 按环境在 profile 文件中配置
+ai:
+  deepseek:
+    base-url: https://api.deepseek.com
+    default-model: deepseek-flash
+    # 单次调用超时（含流式输出全过程），思考模式下的参考解法可能较慢
+    timeout: 180s
+    # 保存 Key 时校验调用的超时
+    verify-timeout: 10s
+    models:
+      - id: deepseek-flash
+        display-name: DeepSeek Flash（快、便宜）
+        context-window: 1000000
+      - id: deepseek-v4-pro
+        display-name: DeepSeek V4 Pro（更强）
+        context-window: 1000000
+  companion:
+    persona-name: 栗子
+    # 上下文占用达到模型窗口的该比例时，发送前自动压缩记忆
+    compact-ratio: 0.8
+    # 压缩时原样保留的最近轮数（一轮从一条用户消息开始）
+    keep-recent-rounds: 4
+    # 单次请求中用户代码、工具返回结果的最大字符数，超出部分截断并告知模型
+    max-code-chars: 20000
+    max-tool-result-chars: 4000
+    # 工具"查我在本题的最近提交"返回的条数
+    recent-submission-count: 5
+    # 会话接口一次返回的历史消息条数
+    history-page-size: 30

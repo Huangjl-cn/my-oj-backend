@@ -16,7 +16,19 @@
     <properties>
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <langchain4j.version>1.24.0</langchain4j.version>
     </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -60,6 +72,15 @@
             <artifactId>spring-boot-devtools</artifactId>
             <scope>runtime</scope>
             <optional>true</optional>
+        </dependency>
+        <!-- LangChain4j：AI Service、记忆、工具调用、护栏；DeepSeek 走 OpenAI 兼容接口（只用正式版模块） -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>

@@ -36,3 +36,8 @@ codesandbox:
     # 生产密钥由部署环境变量注入（见 application-prod.yml），严禁写入仓库。
     key-id: sandbox-key-dev-2026
     private-key: MEECAQAwEwYHKoZIzj0CAQYIKoZIzj0DAQcEJzAlAgEBBCA3g4tm7fJYlnSAbBjD7pU8exOMaXToOSfNkCuMzfmfDQ==
+# AI 陪练：默认用模拟模型（不需要任何 Key，返回固定话术）；联调真实模型时设 AI_MODE=live，再在页面上保存自己的 DeepSeek Key
+ai:
+  mode: ${AI_MODE:mock}
+  # 【开发专用加密主密钥】已公开，只用于本机开发库里用户 Key 的加密；生产主密钥由部署环境注入
+  key-encryption-key: AqYMLlOazvKA/ksxXCXHJR9L/AIiwSpFczT+3HjPPK4=
