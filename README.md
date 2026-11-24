@@ -14,6 +14,7 @@
 - **结构化用例**：题目定义输入参数与输出类型，沙箱只做原始编译执行，判题结果由后端类型化比较
 - **安全鉴权**：沙箱调用采用 ECDSA 请求签名，防伪造、防重放
 - **防重复判题**：`WAITING → RUNNING → SUCCEED | FAILED` 状态机 + 条件更新，保证同一提交只判一次
+- **AI 陪练**：做题页的陪练伙伴（LangChain4j + DeepSeek，用户自带 API Key）。提交后结合进退步说话；分级提示分「找思路 / 找 bug」两条线，按用户选择的程度透露；能看用户代码、查提交记录、提出代码修改（用户预览后再应用）；记忆按上下文占用自动压缩
 - **完整的管理能力**：用户注册登录、题目增删改查、提交记录查询、管理员权限（`@AuthCheck` + AOP）
 - **开箱即用的接口文档**：Knife4j 在线文档（dev 环境）
 
@@ -64,6 +65,7 @@ mvn spring-boot:run
 - **没有 Docker**：自行安装 MySQL 8，执行 `mysql -uroot -p < sql/create_table.sql`；root 密码不是 `oj_dev` 时，用环境变量 `MYSQL_PASSWORD` 覆盖。
 - **在 IDE 里运行** `MainApplication`：加 VM 参数 `-Dspring.profiles.active=dev`。
 - **联调真实沙箱**（[my-oj-sandbox](https://github.com/Huangjl-cn/my-oj-sandbox)）：`CODESANDBOX_TYPE=remote CODESANDBOX_URL=http://<沙箱地址>:8100 mvn spring-boot:run`。开发用的签名密钥对已内置，与沙箱的 dev 配置配对。
+- **AI 陪练**默认用模拟模型（不需要任何 Key，回复是固定话术）；要联调真实模型，用 `AI_MODE=live mvn spring-boot:run` 启动，再在页面的 AI 设置里保存自己的 DeepSeek Key。
 - **其他开发配置**都可以用环境变量覆盖，见 `src/main/resources/application-dev.yml`；也可以在项目根目录建 `config/application-dev.yml`（已被 gitignore）。
 
 接口文档：http://localhost:8102/api/doc.html
@@ -103,6 +105,9 @@ docker compose up -d --build
 | `CODESANDBOX_URL` | 沙箱地址，不带 `/executeCode`，如 `http://10.0.0.2:8100` | 否 |
 | `CODESANDBOX_AUTH_KEY_ID` | 签名 key-id，与沙箱生产配置一致 | 否 |
 | `CODESANDBOX_AUTH_PRIVATE_KEY` | 签名私钥（Base64 PKCS#8），生成方法见[沙箱调用鉴权](./docs/sandbox-auth/README.md) | 是 |
+| `AI_KEY_ENCRYPTION_KEY` | 加密用户 AI API Key 的主密钥，`openssl rand -base64 32` 生成；部署后不要更换 | 是 |
+
+上线新版本前，在线上库再执行一遍 `sql/create_table.sql`（全是"不存在才建"），补上新增的表。
 
 ## 项目结构
 
@@ -110,6 +115,8 @@ docker compose up -d --build
 src/main/java/com/hjl/oj/
 ├── controller/        # HTTP 接口层
 ├── service/           # 业务逻辑层
+├── ai/                # 通用 AI 基础设施：配置、模型创建、Key 加密与校验、调用许可
+├── companion/         # AI 陪练：AI Service、分级提示、工具、护栏、记忆、提示词
 ├── judge/             # 判题模块（核心）
 │   ├── codesandbox/   # 代码沙箱：工厂 + 代理模式、请求签名
 │   ├── queue/         # 判题调度器：按序派发、并发限制、卡死恢复
@@ -134,7 +141,7 @@ src/main/java/com/hjl/oj/
 
 - [代码沙箱接口契约](./docs/sandbox-contract.md)
 - [沙箱调用鉴权](./docs/sandbox-auth/README.md)（ECDSA 签名、密钥生成与轮换）
-- [前端对接说明](./docs/frontend/)
+- [前端对接说明](./docs/frontend/)（含 [AI 陪练](./docs/frontend/ai-companion.md)）
 - [开发约定](./AGENTS.md)（架构、配置、测试、提交规范）
 - [数据库建表脚本](./sql/create_table.sql)
 

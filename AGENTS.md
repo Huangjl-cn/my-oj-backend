@@ -45,6 +45,19 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 3. **指标击败率** `rank`：对比人群是同题、同语言、仅 Accepted（复用 `JudgeResultEnum.ACCEPTED.getSqlFragment()`）、含本人；"超过"按指标 `>=` 本次提交计（持平计入，首次通过为 1/1 = 100%）。只返回 Total / Beaten 计数，比例由前端计算。
 4. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
 
+### AI 陪练（`ai/` + `companion/`）
+
+LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 API Key。前端对接见 `docs/frontend/ai-companion.md`。
+
+- **分层**：`ai/` 是通用 AI 基础设施（配置与校验、按用户 Key 创建模型、模拟模型、Key 加解密与校验、调用许可、错误翻译、用量日志），不依赖任何业务代码，以后的 AI 功能直接复用；`companion/` 是陪练的 AI 编排（AI Service 接口、分级规则、事实计算、提示词、工具、护栏、记忆、兜底话术）；接口和持久化沿用 controller / service / mapper 分层。依赖方向：controller → service → companion → ai。
+- **AI Service**（`companion/assistant/`）：聊天（流式、记忆、工具）、看答案（流式、思考模式、记忆）、提示和提交后反应（结构化输出 + 输出护栏）、记忆压缩。每次请求按用户的 Key、模型和改代码权限新建，不做单例。**系统提示词和用户消息只能通过 `@V` 变量代入**：框架会把模板当模板渲染，题目或代码里的 `{{` 直接作为模板会报错（见 `CompanionAssistantWiringTest`）。
+- **分级提示**（`companion/hint/HintLadder`）：两条线（找思路 IDEA / 找 bug BUG）各 0-5 级，等级表示"最多透露多少"；给用户看名字和说明，给模型看规则。改代码权限随等级放开（只修语法 → 可批注 → 每处 ≤3 行 → 不限），由 `CodeEditPolicy` 在 `edit_code` 工具里强制执行；文字回答的分寸由提示词约束。有问必答模式等同第 5 级。
+- **改代码**（`companion/edit/`）：修改只作用于请求带上来的代码快照，原文必须唯一匹配；返回 `CodeEditProposal`（baseHash + 每处明细 + resultCode），前端预览后由用户决定是否应用。
+- **事实由代码算，表达交给模型**（`companion/context/`）：提交后反应用到的"第几次、进步还是退步、连续同错、离上次多久"由 `SubmissionFactsBuilder` 计算；判题结果兼容 judgeInfo.message 中英文两种写法（`VerdictClassifier`）。
+- **记忆**（`companion/memory/`）：每人每题一段，存 `companion_session.memory`（LangChain4j 序列化格式，写入前去掉思考内容）。上下文占用达到窗口的 `ai.companion.compact-ratio`（默认 0.8）时发送前自动压缩，也可手动压缩：较早的对话整理成分节笔记、用户提问原文保留、最近 `keep-recent-rounds` 轮原样保留，超长时分段滚动压缩。提示和反应不挂记忆，提示的结果由服务层补写进记忆，反应在下一轮作为"最近的提交与你的反应"带进用户消息。
+- **调用约束**：同一用户同一时间只有一个进行中的 AI 调用（`AiCallGuard`，单实例内生效）；提交后反应在没配 Key 或调用失败时用兜底话术（只表达情绪，不给解题信息），同一次提交重复调用返回同一结果。
+- **上下文占用**：流式结束时 LangChain4j 给的是整轮累计用量，当前上下文取最后一次调用的输入加输出（总数减去中间各次）。
+
 ### 鉴权
 
 - 登录态存在 session：`UserService.getLoginUser(request)` 读 session 属性 `user_login`（`UserConstant.USER_LOGIN_STATE`），登出即删除该属性。
@@ -68,6 +81,7 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 - `application-dev.yml`：写全开发默认值，clone 即可运行。监听 127.0.0.1:8102（`SERVER_ADDRESS` 可覆盖）；MySQL `localhost:3306/oj_db`，root / oj_dev（`MYSQL_URL` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 可覆盖）；SQL 日志和 Knife4j 打开；沙箱默认 `example`，联调真实沙箱设 `CODESANDBOX_TYPE=remote` 和 `CODESANDBOX_URL`（默认 `http://localhost:8100`）。内置**开发专用**签名密钥对（key-id `sandbox-key-dev-2026`，与沙箱 dev 公钥配对；私钥已公开，生产沙箱不信任）。本机差异用环境变量或项目根目录的 `config/application-dev.yml`（已 gitignore）覆盖，不要改仓库里的文件。
 - `application-prod.yml`：生产配置的唯一来源。端口 8101，数据库 `my-oj-db:3306/oj_db`，账号 `oj_app`；SQL 日志和接口文档关闭，session 24 小时，HikariCP 池 10，响应压缩开。密码、沙箱地址和签名密钥从环境变量读取（`MYSQL_PASSWORD`、`CODESANDBOX_URL`、`CODESANDBOX_AUTH_KEY_ID`、`CODESANDBOX_AUTH_PRIVATE_KEY`），缺失时启动失败。
 - `src/test/resources/application-test.yml`：叠加在 dev 之上，只关闭判题调度器（`judge.queue.enabled=false`）。
+- AI 配置（`ai.*`，绑定到 `AiProperties`，启动时由 `AiConfig` 校验）：公共部分在 `application.yml`（DeepSeek 地址、可选模型及上下文窗口、超时、陪练参数）；dev 的 `ai.mode` 默认 `mock`（模拟模型，不需要任何 Key，`AI_MODE=live` 切到真实模型），并内置**开发专用**的 Key 加密主密钥；prod 为 `live`，主密钥从 `AI_KEY_ENCRYPTION_KEY` 读取，缺失时启动失败。用户 Key 用 AES-GCM 加密存进 `user_ai_setting`，接口只返回后 4 位。
 
 公共配置中的其他项：`codesandbox.timeout`（毫秒，同时用作 HTTP 连接和读取超时）；`codesandbox.url` 不带 `/executeCode` 后缀；`judge.queue.*`（`enabled`、`concurrency`、`poll-interval-ms`、`stale-running-minutes`）。`codesandbox.type` 只有 `remote` 和 `example` 两个取值。
 
@@ -84,13 +98,13 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 
 - 四空格缩进，沿用现有的 Spring 和 Lombok 写法；类名 PascalCase，方法和字段 camelCase，常量 UPPER_SNAKE_CASE。
 - 请求模型放在 `model/dto/<功能>`；接口返回统一用 `BaseResponse` / `ResultUtils`，错误抛 `BusinessException`。
-- **密码字段必须加 `@ToString.Exclude`**：`LogInterceptor` 会以 INFO 级别打印接口入参的 toString（见 `PasswordToStringTest`）。
+- **密码字段必须加 `@ToString.Exclude`**：`LogInterceptor` 会以 INFO 级别打印接口入参的 toString（见 `PasswordToStringTest`）。API Key、用户代码和对话内容同样排除（见 `SensitiveToStringTest`）。
 - 业务异常（4xxxx）记 warn 不打堆栈，系统错误（5xxxx）记 error。
 
 ## 安全与凭据
 
 - 仓库里只允许出现开发专用、只能访问本机开发资源的凭据，并注释标明（见 `application-dev.yml`）。
-- 生产的数据库密码、沙箱签名私钥只通过服务器上的 `deploy/.env` 注入，不进仓库、镜像和日志。
+- 生产的数据库密码、沙箱签名私钥、AI Key 加密主密钥只通过服务器上的 `deploy/.env` 注入，不进仓库、镜像和日志。主密钥部署后不要更换，否则已保存的用户 Key 全部无法解密。
 - 与环境有关的值放在 profile 配置中，不写进公共配置或代码。
 
 ## 部署（`deploy/`）
