@@ -2,8 +2,8 @@ package com.hjl.oj.companion.memory;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.hjl.oj.mapper.CompanionSessionMapper;
-import com.hjl.oj.model.entity.CompanionSession;
+import com.hjl.oj.mapper.CompanionConversationMapper;
+import com.hjl.oj.model.entity.CompanionConversation;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
@@ -16,53 +16,50 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * 会话记忆存进 companion_session.memory（LangChain4j 自带的序列化格式，含工具调用和工具结果）。
+ * 对话记忆存进 companion_conversation.memory（LangChain4j 自带的序列化格式，含工具调用和工具结果）。
  *
- * <p>写入前去掉 AiMessage 里的思考内容：思考不需要回传给模型，留着只会让记忆膨胀。会话行由业务层先创建。
+ * <p>写入前去掉 AiMessage 里的思考内容：思考不需要回传给模型，留着只会让记忆膨胀。对话行由业务层先创建。
  */
 @Slf4j
 @Component
 public class MysqlChatMemoryStore implements ChatMemoryStore {
 
-    private final CompanionSessionMapper companionSessionMapper;
+    private final CompanionConversationMapper conversationMapper;
 
-    public MysqlChatMemoryStore(CompanionSessionMapper companionSessionMapper) {
-        this.companionSessionMapper = companionSessionMapper;
+    public MysqlChatMemoryStore(CompanionConversationMapper conversationMapper) {
+        this.conversationMapper = conversationMapper;
     }
 
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
-        SessionMemoryId id = cast(memoryId);
-        CompanionSession session = companionSessionMapper.selectOne(new QueryWrapper<CompanionSession>()
+        ConversationMemoryId id = cast(memoryId);
+        CompanionConversation conversation = conversationMapper.selectOne(new QueryWrapper<CompanionConversation>()
                 .select("memory")
-                .eq("userId", id.userId())
-                .eq("questionId", id.questionId()));
-        if (session == null || session.getMemory() == null || session.getMemory().isBlank()) {
+                .eq("id", id.conversationId()));
+        if (conversation == null || conversation.getMemory() == null || conversation.getMemory().isBlank()) {
             return List.of();
         }
-        return ChatMessageDeserializer.messagesFromJson(session.getMemory());
+        return ChatMessageDeserializer.messagesFromJson(conversation.getMemory());
     }
 
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
-        SessionMemoryId id = cast(memoryId);
+        ConversationMemoryId id = cast(memoryId);
         String json = ChatMessageSerializer.messagesToJson(withoutThinking(messages));
-        int updated = companionSessionMapper.update(null, new UpdateWrapper<CompanionSession>()
-                .eq("userId", id.userId())
-                .eq("questionId", id.questionId())
+        int updated = conversationMapper.update(null, new UpdateWrapper<CompanionConversation>()
+                .eq("id", id.conversationId())
                 .set("memory", json)
                 .set("memoryUpdateTime", new Date()));
         if (updated == 0) {
-            log.warn("写入陪练记忆时会话不存在 userId={}, questionId={}", id.userId(), id.questionId());
+            log.warn("写入陪练记忆时对话不存在 conversationId={}", id.conversationId());
         }
     }
 
     @Override
     public void deleteMessages(Object memoryId) {
-        SessionMemoryId id = cast(memoryId);
-        companionSessionMapper.update(null, new UpdateWrapper<CompanionSession>()
-                .eq("userId", id.userId())
-                .eq("questionId", id.questionId())
+        ConversationMemoryId id = cast(memoryId);
+        conversationMapper.update(null, new UpdateWrapper<CompanionConversation>()
+                .eq("id", id.conversationId())
                 .set("memory", null)
                 .set("memoryUpdateTime", new Date()));
     }
@@ -75,8 +72,8 @@ public class MysqlChatMemoryStore implements ChatMemoryStore {
                 .toList();
     }
 
-    private static SessionMemoryId cast(Object memoryId) {
-        if (memoryId instanceof SessionMemoryId id) {
+    private static ConversationMemoryId cast(Object memoryId) {
+        if (memoryId instanceof ConversationMemoryId id) {
             return id;
         }
         throw new IllegalArgumentException("不支持的记忆 ID：" + memoryId);

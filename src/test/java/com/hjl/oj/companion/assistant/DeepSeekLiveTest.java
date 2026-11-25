@@ -108,11 +108,11 @@ class DeepSeekLiveTest {
 
     @Test
     void hintAtExactLineLevelProposesSmallEdit() {
-        HintState state = new HintState(HintTrackEnum.BUG, 3, HintModeEnum.GUIDED);
+        HintState state = new HintState(HintTrackEnum.BUG, 4, HintModeEnum.GUIDED);
         CodeSnapshot snapshot = snapshot(OVERFLOW_CODE);
 
         Result<HintAnswer> result = factory.hintAssistant(credential).hint(systemPrompt,
-                prompts.hintMessage(state, 4, snapshot, "【最近的提交与你的反应】\n- 第 2 次提交：答案错误", ""));
+                prompts.hintMessage(state, snapshot, "【最近的提交与你的反应】\n- 第 2 次提交：答案错误", ""));
         HintAnswer answer = result.content();
 
         CodeEditSession session = new CodeEditSession(snapshot.getCode(), "java",
@@ -138,7 +138,7 @@ class DeepSeekLiveTest {
 
         CodeEditSession firstEdits = new CodeEditSession(MISSING_SEMICOLON, "java", state.editPermission());
         ChatResponse first = await(factory.chatAssistant(credential, memory, List.of(new CodeEditTools(firstEdits)))
-                .chat(systemPrompt, prompts.chatMessage(state, snapshot(MISSING_SEMICOLON), "",
+                .chat(systemPrompt, prompts.chatMessage(state, snapshot(MISSING_SEMICOLON), "", null,
                         "编译报错了，帮我看看哪里写错了，直接帮我改一下")), null);
         print("chat#1", first.aiMessage().text() + firstEdits.proposal().map(p -> "\n[edits] " + p.edits()
                 + "\n" + p.resultCode()).orElse("\n[edits] 无"), first.tokenUsage());
@@ -146,7 +146,7 @@ class DeepSeekLiveTest {
         CodeEditSession secondEdits = new CodeEditSession(OVERFLOW_CODE, "java", state.editPermission());
         ChatResponse second = await(factory.chatAssistant(credential, memory, List.of(new CodeEditTools(secondEdits)))
                 .chat(systemPrompt, prompts.chatMessage(state, snapshot(OVERFLOW_CODE),
-                        "【最近的提交与你的反应】\n- 第 2 次提交：答案错误，第 3 个测试点输入 2000000000 2000000000",
+                        "【最近的提交与你的反应】\n- 第 2 次提交：答案错误，第 3 个测试点输入 2000000000 2000000000", null,
                         "编译过了，但是答案错误，为什么？")), null);
         print("chat#2", second.aiMessage().text() + secondEdits.proposal().map(p -> "\n[edits] " + p.edits())
                 .orElse("\n[edits] 无"), second.tokenUsage());

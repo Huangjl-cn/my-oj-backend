@@ -18,9 +18,8 @@ public class CompanionStreamDoneVO implements Serializable {
     @Schema(description = "陪练这条回答的消息 id")
     private Long messageId;
 
+    @Schema(description = "回答后的提示档位（看答案后为 5）")
     private Integer hintLevel;
-
-    private String hintTrack;
 
     private ContextUsageVO contextUsage;
 

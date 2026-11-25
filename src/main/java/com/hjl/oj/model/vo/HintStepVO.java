@@ -19,12 +19,12 @@ public class HintStepVO implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    @Schema(description = "等级 0-5（只用于程序，不要直接展示给用户）")
+    @Schema(description = "档位 0-5")
     private Integer level;
 
-    @Schema(description = "名字，如「点出关键」")
+    @Schema(description = "名字，如「点关键」")
     private String title;
 
-    @Schema(description = "一句说明，如「点出解题的关键观察，但不说用什么算法」")
+    @Schema(description = "一句说明这一档会说到什么程度")
     private String description;
 }

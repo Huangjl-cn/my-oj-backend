@@ -7,21 +7,25 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HintLadderTest {
 
     @Test
-    void bothTracksHaveSixNamedSteps() {
-        for (HintTrackEnum track : HintTrackEnum.values()) {
-            List<HintStep> steps = HintLadder.steps(track);
-            assertEquals(6, steps.size());
-            for (int level = 0; level < steps.size(); level++) {
-                HintStep step = steps.get(level);
-                assertEquals(level, step.level());
-                assertTrue(!step.title().isBlank() && !step.description().isBlank() && !step.rule().isBlank());
+    void sixNamedStepsWithRulesForBothTracks() {
+        List<HintStep> steps = HintLadder.steps();
+        assertEquals(6, steps.size());
+        for (int level = 0; level < steps.size(); level++) {
+            HintStep step = steps.get(level);
+            assertEquals(level, step.level());
+            assertFalse(step.title().isBlank() || step.description().isBlank());
+            for (HintTrackEnum track : HintTrackEnum.values()) {
+                assertFalse(step.rule(track).isBlank());
             }
         }
+        assertTrue(HintLadder.step(3).rule(HintTrackEnum.BUG).contains("反例"));
+        assertTrue(HintLadder.step(3).rule(HintTrackEnum.IDEA).contains("算法"));
     }
 
     @Test
@@ -46,23 +50,25 @@ class HintLadderTest {
     void levelsAreClamped() {
         assertEquals(0, HintLadder.clamp(-3));
         assertEquals(5, HintLadder.clamp(9));
-        assertEquals("看答案", HintLadder.step(HintTrackEnum.IDEA, 99).title());
+        assertEquals("看答案", HintLadder.step(99).title());
     }
 
     @Test
-    void promptDescribesEveryLevelOfBothTracks() {
+    void promptDescribesBothTracksUnderEveryLevel() {
         String prompt = HintLadder.describeForPrompt();
 
-        assertTrue(prompt.contains("找思路") && prompt.contains("找 bug"));
-        assertTrue(prompt.contains("「给个反例」") && prompt.contains("「说出解法」"));
+        assertTrue(prompt.contains("找思路（IDEA）") && prompt.contains("找 bug（BUG）"));
+        assertTrue(prompt.contains("「只陪伴」") && prompt.contains("「给步骤」"));
         assertTrue(prompt.contains("改代码的权限"));
     }
 
     @Test
-    void stateDescriptionShowsNameNotOnlyNumber() {
-        String text = new HintState(HintTrackEnum.IDEA, 2, HintModeEnum.GUIDED).describe();
+    void stateDescriptionUsesTheRuleOfTheJudgedTrack() {
+        String idea = new HintState(HintTrackEnum.IDEA, 2, HintModeEnum.GUIDED).describe();
+        String bug = new HintState(HintTrackEnum.BUG, 2, HintModeEnum.GUIDED).describe();
 
-        assertTrue(text.contains("「点出关键」"));
-        assertTrue(text.contains("只能修语法"));
+        assertTrue(idea.contains("「点关键」") && idea.contains("关键观察"));
+        assertTrue(bug.contains("「点关键」") && bug.contains("大致区域"));
+        assertTrue(idea.contains("只能修语法"));
     }
 }

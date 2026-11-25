@@ -8,6 +8,8 @@ import com.hjl.oj.ai.key.AiCredential;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.companion.assistant.CompanionAssistantFactory;
 import com.hjl.oj.companion.assistant.CompanionChatAssistant;
+import com.hjl.oj.companion.assistant.CompanionHintAssistant;
+import com.hjl.oj.companion.assistant.HintAnswer;
 import com.hjl.oj.companion.memory.MemoryCompactor;
 import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
 import com.hjl.oj.companion.prompt.CompanionPrompts;
@@ -16,11 +18,13 @@ import com.hjl.oj.companion.tool.CodeRewriteTools;
 import com.hjl.oj.companion.tool.SubmissionHistoryTools;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
+import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionReactRequest;
+import com.hjl.oj.model.entity.CompanionConversation;
 import com.hjl.oj.model.entity.CompanionMessage;
 import com.hjl.oj.model.entity.CompanionSession;
 import com.hjl.oj.model.entity.Question;
@@ -28,18 +32,25 @@ import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.CompanionMessageTypeEnum;
 import com.hjl.oj.model.enums.HintModeEnum;
+import com.hjl.oj.model.enums.HintTrackEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.CompanionHintVO;
 import com.hjl.oj.model.vo.CompanionReactionVO;
+import com.hjl.oj.model.vo.CompanionSessionVO;
+import com.hjl.oj.model.vo.HintStepVO;
 import com.hjl.oj.service.AiSettingService;
+import com.hjl.oj.service.CompanionConversationService;
 import com.hjl.oj.service.CompanionMessageService;
 import com.hjl.oj.service.CompanionSessionService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +81,8 @@ class CompanionServiceImplTest {
 
     private static final long QUESTION_ID = 2L;
 
+    private static final long CONVERSATION_ID = 3L;
+
     private final QuestionService questionService = mock(QuestionService.class);
 
     private final QuestionSubmitService questionSubmitService = mock(QuestionSubmitService.class);
@@ -77,6 +90,8 @@ class CompanionServiceImplTest {
     private final AiSettingService aiSettingService = mock(AiSettingService.class);
 
     private final CompanionSessionService sessionService = mock(CompanionSessionService.class);
+
+    private final CompanionConversationService conversationService = mock(CompanionConversationService.class);
 
     private final CompanionMessageService messageService = mock(CompanionMessageService.class);
 
@@ -92,32 +107,65 @@ class CompanionServiceImplTest {
 
     private User user;
 
+    private CompanionSession session;
+
+    private CompanionConversation conversation;
+
     @BeforeEach
     void setUp() {
         AiProperties properties = new AiProperties();
         properties.setMode(AiMode.MOCK);
         properties.getCompanion().setPersonaName("栗子");
         service = new CompanionServiceImpl(questionService, questionSubmitService, aiSettingService, sessionService,
-                messageService, assistantFactory, prompts, mock(MemoryCompactor.class), memoryStore, aiCallGuard,
-                properties);
+                conversationService, messageService, assistantFactory, prompts, mock(MemoryCompactor.class), memoryStore,
+                aiCallGuard, properties);
         user = new User();
         user.setId(USER_ID);
         Question question = new Question();
         question.setId(QUESTION_ID);
         when(questionService.getById(QUESTION_ID)).thenReturn(question);
-        CompanionSession session = new CompanionSession();
+        session = new CompanionSession();
         session.setId(9L);
         session.setUserId(USER_ID);
         session.setQuestionId(QUESTION_ID);
         session.setHintLevel(0);
         session.setHintTrack("idea");
-        session.setContextTokens(0);
+        session.setActiveConversationId(CONVERSATION_ID);
         when(sessionService.getOrCreate(USER_ID, QUESTION_ID)).thenReturn(session);
+        conversation = new CompanionConversation();
+        conversation.setId(CONVERSATION_ID);
+        conversation.setUserId(USER_ID);
+        conversation.setQuestionId(QUESTION_ID);
+        conversation.setContextTokens(0);
+        when(conversationService.getActive(session)).thenReturn(conversation);
+        when(conversationService.requireOwned(USER_ID, CONVERSATION_ID)).thenReturn(conversation);
+        when(conversationService.requireOwned(USER_ID, 99L))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND_ERROR, "对话不存在"));
+        when(assistantFactory.conversationMemory(any())).thenReturn(mock(ChatMemory.class));
+        when(messageService.reactionsSince(anyLong(), any(), anyInt())).thenReturn(List.of());
         when(aiSettingService.getHintMode(USER_ID)).thenReturn(HintModeEnum.GUIDED);
         when(aiSettingService.getContextWindow(USER_ID)).thenReturn(1_000_000);
         when(aiSettingService.requireCredential(USER_ID)).thenReturn(new AiCredential(null, "deepseek-flash"));
         when(prompts.systemMessage(any())).thenReturn("system");
         when(memoryStore.getMessages(any())).thenReturn(List.of());
+    }
+
+    @Test
+    void sessionShowsNeutralStepsAndActiveConversation() {
+        session.setHintLevel(2);
+
+        CompanionSessionVO vo = service.getSession(user, QUESTION_ID);
+
+        assertEquals(CONVERSATION_ID, vo.getConversationId());
+        assertEquals(2, vo.getHintLevel());
+        assertEquals(List.of("只陪伴", "指方向", "点关键", "说方法", "给步骤", "看答案"),
+                vo.getHintSteps().stream().map(HintStepVO::getTitle).toList());
+    }
+
+    @Test
+    void listMessagesRejectsSomeoneElsesConversation() {
+        assertThrows(BusinessException.class, () -> service.listMessages(user, 99L, null));
+        verify(messageService, never()).listLatest(anyLong(), any(), anyInt());
     }
 
     @Test
@@ -172,16 +220,37 @@ class CompanionServiceImplTest {
         verify(messageService).saveMessage(saved.capture(), eq(null));
         assertEquals(CompanionMessageTypeEnum.REACTION.getValue(), saved.getValue().getType());
         assertEquals(5L, saved.getValue().getSubmissionId());
+        assertEquals(CONVERSATION_ID, saved.getValue().getConversationId());
+        assertEquals(CONVERSATION_ID, vo.getConversationId());
         verify(assistantFactory, never()).reactionAssistant(any());
     }
 
     @Test
-    void hintRejectsSolutionLevelAndReleasesPermit() {
+    @SuppressWarnings("unchecked")
+    void hintUsesCurrentLevelAndOnlyUpdatesJudgedTrack() {
+        session.setHintLevel(2);
+        HintAnswer answer = new HintAnswer();
+        answer.setTrack(HintTrackEnum.BUG);
+        answer.setMessage("看看循环的结束条件");
+        Result<HintAnswer> result = mock(Result.class);
+        when(result.content()).thenReturn(answer);
+        CompanionHintAssistant hintAssistant = mock(CompanionHintAssistant.class);
+        when(hintAssistant.hint(anyString(), anyString())).thenReturn(result);
+        when(assistantFactory.hintAssistant(any())).thenReturn(hintAssistant);
+        when(prompts.hintMessage(any(), any(), anyString(), anyString())).thenReturn("prompt");
         CompanionHintRequest request = new CompanionHintRequest();
-        request.setQuestionId(QUESTION_ID);
-        request.setTargetLevel(5);
+        request.setConversationId(CONVERSATION_ID);
 
-        assertThrows(BusinessException.class, () -> service.hint(user, request));
+        CompanionHintVO vo = service.hint(user, request);
+
+        assertEquals(2, vo.getHintLevel());
+        assertEquals("点关键", vo.getStepTitle());
+        verify(sessionService, never()).updateHintState(anyLong(), anyInt(), any());
+        verify(sessionService).updateHintTrack(9L, HintTrackEnum.BUG);
+        ArgumentCaptor<CompanionMessage> saved = ArgumentCaptor.forClass(CompanionMessage.class);
+        verify(messageService).saveMessage(saved.capture(), eq(null));
+        assertEquals(2, saved.getValue().getHintLevel());
+        assertEquals(CONVERSATION_ID, saved.getValue().getConversationId());
         // 许可已释放：同一用户可以立刻再次占用
         aiCallGuard.acquire(USER_ID).close();
     }
@@ -205,8 +274,7 @@ class CompanionServiceImplTest {
         CompanionChatAssistant chatAssistant = mock(CompanionChatAssistant.class);
         when(chatAssistant.chat(anyString(), anyString())).thenAnswer(invocation -> new CompletingTokenStream());
         when(assistantFactory.chatAssistant(any(), any(), any())).thenReturn(chatAssistant);
-        when(prompts.chatMessage(any(), any(), anyString(), anyString())).thenReturn("prompt");
-        when(messageService.reactionsSince(anyLong(), anyLong(), any(), anyInt())).thenReturn(List.of());
+        when(prompts.chatMessage(any(), any(), anyString(), any(), anyString())).thenReturn("prompt");
 
         service.chat(user, chatRequest());
         when(aiSettingService.getHintMode(USER_ID)).thenReturn(HintModeEnum.DIRECT);
@@ -221,7 +289,43 @@ class CompanionServiceImplTest {
         assertFalse(guided.stream().anyMatch(CodeRewriteTools.class::isInstance));
         assertTrue(direct.stream().anyMatch(CodeRewriteTools.class::isInstance));
         // 流式回答收尾：陪练的回答落库、上下文占用更新
-        verify(sessionService, times(2)).updateContextTokens(eq(9L), eq(1500));
+        verify(conversationService, times(2)).updateContextTokens(eq(CONVERSATION_ID), eq(1500));
+    }
+
+    @Test
+    void chatWithQuoteSavesItAndTitlesTheConversation() {
+        CompanionChatAssistant chatAssistant = mock(CompanionChatAssistant.class);
+        when(chatAssistant.chat(anyString(), anyString())).thenAnswer(invocation -> new CompletingTokenStream());
+        when(assistantFactory.chatAssistant(any(), any(), any())).thenReturn(chatAssistant);
+        when(prompts.chatMessage(any(), any(), anyString(), any(), anyString())).thenReturn("prompt");
+        CompanionChatRequest request = chatRequest();
+        CodeQuote quote = new CodeQuote();
+        quote.setStartLine(1);
+        quote.setEndLine(1);
+        quote.setCode("a = 1");
+        request.setQuote(quote);
+
+        service.chat(user, request);
+
+        verify(conversationService).activate(session, conversation);
+        verify(prompts).chatMessage(any(), any(), anyString(), eq(quote), eq("帮我看看"));
+        verify(messageService).saveUserMessage(conversation, CompanionMessageTypeEnum.CHAT, "帮我看看", quote);
+        verify(conversationService).titleIfAbsent(CONVERSATION_ID, "帮我看看");
+    }
+
+    @Test
+    void chatRejectsQuoteWithBadLines() {
+        CompanionChatRequest request = chatRequest();
+        CodeQuote quote = new CodeQuote();
+        quote.setStartLine(3);
+        quote.setEndLine(2);
+        quote.setCode("x");
+        request.setQuote(quote);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.chat(user, request));
+
+        assertEquals(ErrorCode.PARAMS_ERROR.getCode(), error.getCode());
+        verify(messageService, never()).saveUserMessage(any(), any(), anyString(), any());
     }
 
     @Test
@@ -313,7 +417,7 @@ class CompanionServiceImplTest {
         snapshot.setCode("int a = 1;");
         snapshot.setLanguage("java");
         CompanionChatRequest request = new CompanionChatRequest();
-        request.setQuestionId(QUESTION_ID);
+        request.setConversationId(CONVERSATION_ID);
         request.setMessage("帮我看看");
         request.setSnapshot(snapshot);
         return request;

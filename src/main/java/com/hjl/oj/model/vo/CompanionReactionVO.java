@@ -25,8 +25,8 @@ public class CompanionReactionVO implements Serializable {
     @Schema(description = "心情强度 1-3")
     private Integer moodIntensity;
 
-    @Schema(description = "陪练判断的方向 idea / bug")
-    private String hintTrack;
+    @Schema(description = "反应记在哪段对话里")
+    private Long conversationId;
 
     private String message;
 

@@ -6,6 +6,7 @@ import com.hjl.oj.companion.context.SubmissionFacts;
 import com.hjl.oj.companion.hint.EditPermission;
 import com.hjl.oj.companion.hint.HintLadder;
 import com.hjl.oj.companion.hint.HintState;
+import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.dto.question.JudgeConfig;
 import com.hjl.oj.model.entity.Question;
@@ -69,19 +70,23 @@ public class CompanionPrompts {
                 "officialAnswer", StringUtils.defaultIfBlank(question.getAnswer(), NONE))).text();
     }
 
-    public String chatMessage(HintState state, CodeSnapshot snapshot, String recentEvents, String userText) {
+    /**
+     * @param quote 用户选中代码后提问时引用的那段，可为空
+     */
+    public String chatMessage(HintState state, CodeSnapshot snapshot, String recentEvents, CodeQuote quote,
+                              String userText) {
         String rewriteNote = state.editPermission() == EditPermission.UNRESTRICTED ? "，需要整体替换时调用 rewriteCode" : "";
         return join(chatScene.apply(Map.<String, Object>of("rewriteNote", rewriteNote)).text(),
                 state.describe(),
                 recentEvents,
                 renderCode(snapshot),
+                renderQuote(quote),
                 "【用户说】\n" + userText);
     }
 
-    public String hintMessage(HintState state, int targetLevel, CodeSnapshot snapshot, String recentEvents,
-                              String transcript) {
-        return join(hintScene.apply(Map.<String, Object>of("targetLevel", targetLevel)).text(),
-                state.withLevel(targetLevel).describe(),
+    public String hintMessage(HintState state, CodeSnapshot snapshot, String recentEvents, String transcript) {
+        return join(hintScene.apply(Map.<String, Object>of("level", state.effectiveLevel())).text(),
+                state.describe(),
                 recentEvents,
                 section("对话回顾", transcript),
                 renderCode(snapshot));
@@ -145,6 +150,14 @@ public class CompanionPrompts {
             text.append("光标在第 ").append(snapshot.getCursorLine()).append(" 行\n");
         }
         return text.toString();
+    }
+
+    static String renderQuote(CodeQuote quote) {
+        if (quote == null || StringUtils.isBlank(quote.getCode())) {
+            return "";
+        }
+        return "【用户引用的代码】第 " + quote.getStartLine() + " 到第 " + quote.getEndLine()
+                + " 行，用户这句话问的就是这一段：\n```\n" + quote.getCode().replace("\r\n", "\n").stripTrailing() + "\n```";
     }
 
     private static JudgeConfig judgeConfig(Question question) {

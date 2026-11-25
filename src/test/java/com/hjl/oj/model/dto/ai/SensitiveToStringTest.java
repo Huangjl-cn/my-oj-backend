@@ -1,6 +1,7 @@
 package com.hjl.oj.model.dto.ai;
 
 import com.hjl.oj.ai.key.AiCredential;
+import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.entity.UserAiSetting;
@@ -39,12 +40,18 @@ class SensitiveToStringTest {
         CodeSnapshot snapshot = new CodeSnapshot();
         snapshot.setCode("int secretAlgorithm = 42;");
         snapshot.setLanguage("java");
+        CodeQuote quote = new CodeQuote();
+        quote.setStartLine(1);
+        quote.setEndLine(1);
+        quote.setCode("secretQuote");
         CompanionChatRequest request = new CompanionChatRequest();
-        request.setQuestionId(3L);
+        request.setConversationId(3L);
         request.setMessage("我的私人问题");
+        request.setQuote(quote);
         request.setSnapshot(snapshot);
 
         assertFalse(request.toString().contains("我的私人问题"));
+        assertFalse(request.toString().contains("secretQuote"));
         assertFalse(request.toString().contains("secretAlgorithm"));
         assertTrue(request.toString().contains("java"));
     }

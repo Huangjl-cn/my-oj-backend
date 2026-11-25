@@ -1,6 +1,7 @@
 package com.hjl.oj.model.vo;
 
 import com.hjl.oj.companion.edit.CodeEditProposal;
+import com.hjl.oj.model.dto.companion.CodeQuote;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -25,11 +26,8 @@ public class CompanionMessageVO implements Serializable {
     @Schema(description = "chat 聊天 / hint 提示 / reaction 提交后反应 / solution 参考解法 / compaction 记忆整理")
     private String type;
 
-    @Schema(description = "提示等级（提示、解法）")
+    @Schema(description = "提示档位（提示、解法）")
     private Integer hintLevel;
-
-    @Schema(description = "提示方向 idea / bug")
-    private String hintTrack;
 
     @Schema(description = "陪练心情（提交后反应）")
     private String mood;
@@ -41,6 +39,9 @@ public class CompanionMessageVO implements Serializable {
     private Long submissionId;
 
     private String content;
+
+    @Schema(description = "用户提问时引用的代码，没有为 null")
+    private CodeQuote quote;
 
     @Schema(description = "这条消息附带的代码修改建议，没有为 null")
     private CodeEditProposal codeEdits;

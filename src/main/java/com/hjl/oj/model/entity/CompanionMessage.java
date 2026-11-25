@@ -28,6 +28,8 @@ public class CompanionMessage implements Serializable {
 
     private Long questionId;
 
+    private Long conversationId;
+
     /**
      * 见 CompanionRoleEnum
      */
@@ -52,6 +54,11 @@ public class CompanionMessage implements Serializable {
     private Long submissionId;
 
     private String content;
+
+    /**
+     * 用户提问时引用的代码（CodeQuote 的 JSON）
+     */
+    private String quote;
 
     /**
      * 代码修改建议（CodeEditProposal 的 JSON）

@@ -2,12 +2,14 @@ package com.hjl.oj.companion.prompt;
 
 import com.hjl.oj.ai.config.AiProperties;
 import com.hjl.oj.companion.hint.HintState;
+import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.enums.HintModeEnum;
 import com.hjl.oj.model.enums.HintTrackEnum;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CompanionPromptsTest {
@@ -42,10 +44,10 @@ class CompanionPromptsTest {
         snapshot.setSelectionEndLine(2);
         HintState state = new HintState(HintTrackEnum.BUG, 3, HintModeEnum.GUIDED);
 
-        String message = prompts.chatMessage(state, snapshot, "", "这行有问题吗？");
+        String message = prompts.chatMessage(state, snapshot, "", null, "这行有问题吗？");
 
         assertTrue(message.startsWith("【场景】"));
-        assertTrue(message.contains("「给个反例」"));
+        assertTrue(message.contains("「说方法」") && message.contains("反例"));
         assertTrue(message.contains("1| int a = 1;\n2| int b = 2;"));
         assertTrue(message.contains("选中了第 2 到第 2 行"));
         assertTrue(message.endsWith("【用户说】\n这行有问题吗？"));
@@ -56,7 +58,24 @@ class CompanionPromptsTest {
     void unrestrictedLevelMentionsRewriteTool() {
         HintState state = new HintState(HintTrackEnum.IDEA, 0, HintModeEnum.DIRECT);
 
-        assertTrue(prompts.chatMessage(state, new CodeSnapshot(), "", "直接告诉我").contains("rewriteCode"));
+        assertTrue(prompts.chatMessage(state, new CodeSnapshot(), "", null, "直接告诉我").contains("rewriteCode"));
+    }
+
+    @Test
+    void quotedCodeComesRightBeforeUserText() {
+        CodeSnapshot snapshot = new CodeSnapshot();
+        snapshot.setCode("int a = 1;\nint b = a + 1;");
+        CodeQuote quote = new CodeQuote();
+        quote.setStartLine(2);
+        quote.setEndLine(2);
+        quote.setCode("a + 1\r\n");
+        HintState state = new HintState(HintTrackEnum.IDEA, 1, HintModeEnum.GUIDED);
+
+        String message = prompts.chatMessage(state, snapshot, "", quote, "这里会溢出吗？");
+
+        assertTrue(message.endsWith("【用户引用的代码】第 2 到第 2 行，用户这句话问的就是这一段：\n```\na + 1\n```"
+                + "\n\n【用户说】\n这里会溢出吗？"));
+        assertEquals("", CompanionPrompts.renderQuote(null));
     }
 
     @Test

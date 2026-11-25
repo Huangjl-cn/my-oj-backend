@@ -50,7 +50,7 @@ public class MemoryCompactor {
      * @param userQuestions    用户在本题问过的问题（原文，按时间正序），写进笔记
      * @return 没有可整理的内容时返回空
      */
-    public Optional<CompactionResult> compact(SessionMemoryId memoryId, CompanionCompactionAssistant assistant,
+    public Optional<CompactionResult> compact(ConversationMemoryId memoryId, CompanionCompactionAssistant assistant,
                                               String systemPrompt, int keepRecentRounds, List<String> userQuestions) {
         List<ChatMessage> messages = chatMemoryStore.getMessages(memoryId);
         String previousNote = null;

@@ -17,13 +17,6 @@ import org.springframework.stereotype.Service;
 public class CompanionSessionServiceImpl extends ServiceImpl<CompanionSessionMapper, CompanionSession>
         implements CompanionSessionService {
 
-    /**
-     * 除记忆外的列：记忆可能很大，只在 MysqlChatMemoryStore 里读
-     */
-    private static final String[] STATE_COLUMNS = {
-            "id", "userId", "questionId", "hintLevel", "hintTrack", "contextTokens", "memoryUpdateTime",
-            "createTime", "updateTime"};
-
     @Override
     public CompanionSession getOrCreate(long userId, long questionId) {
         CompanionSession existing = find(userId, questionId);
@@ -35,7 +28,6 @@ public class CompanionSessionServiceImpl extends ServiceImpl<CompanionSessionMap
         session.setQuestionId(questionId);
         session.setHintLevel(0);
         session.setHintTrack(HintTrackEnum.IDEA.getValue());
-        session.setContextTokens(0);
         try {
             this.save(session);
         } catch (DuplicateKeyException e) {
@@ -61,15 +53,22 @@ public class CompanionSessionServiceImpl extends ServiceImpl<CompanionSessionMap
     }
 
     @Override
-    public void updateContextTokens(long sessionId, int contextTokens) {
+    public void updateActiveConversation(long sessionId, long conversationId) {
         this.update(new UpdateWrapper<CompanionSession>()
                 .eq("id", sessionId)
-                .set("contextTokens", Math.max(0, contextTokens)));
+                .set("activeConversationId", conversationId));
+    }
+
+    @Override
+    public boolean claimActiveConversation(long sessionId, long conversationId) {
+        return this.update(new UpdateWrapper<CompanionSession>()
+                .eq("id", sessionId)
+                .isNull("activeConversationId")
+                .set("activeConversationId", conversationId));
     }
 
     private CompanionSession find(long userId, long questionId) {
         return this.getOne(new QueryWrapper<CompanionSession>()
-                .select(STATE_COLUMNS)
                 .eq("userId", userId)
                 .eq("questionId", questionId));
     }

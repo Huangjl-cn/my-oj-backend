@@ -6,7 +6,7 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 直接设置本题的提示等级：0 表示从头自己做，1-4 直接跳到某一级（第 5 级通过看答案进入）
+ * 设置本题的提示档位 0-4（第 5 档通过看答案进入）
  */
 @Data
 public class CompanionLevelRequest implements Serializable {

@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 
 class MemoryCompactorTest {
 
-    private static final SessionMemoryId MEMORY_ID = new SessionMemoryId(1L, 2L);
+    private static final ConversationMemoryId MEMORY_ID = new ConversationMemoryId(3L);
 
     private MysqlChatMemoryStore store;
 

@@ -6,9 +6,12 @@ import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.dto.companion.CompanionCompactRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
+import com.hjl.oj.model.dto.companion.CompanionNewConversationRequest;
 import com.hjl.oj.model.dto.companion.CompanionReactRequest;
 import com.hjl.oj.model.dto.companion.CompanionSolutionRequest;
+import com.hjl.oj.model.dto.companion.CompanionSwitchConversationRequest;
 import com.hjl.oj.model.vo.CompanionCompactionVO;
+import com.hjl.oj.model.vo.CompanionConversationVO;
 import com.hjl.oj.model.vo.CompanionHintStateVO;
 import com.hjl.oj.model.vo.CompanionHintVO;
 import com.hjl.oj.model.vo.CompanionMessageVO;
@@ -44,18 +47,40 @@ public class CompanionController {
     @Resource
     private UserService userService;
 
-    @Operation(summary = "进入题目时获取陪练会话：提示状态、步骤名称、上下文占用、最近消息")
+    @Operation(summary = "进入题目时获取陪练会话：提示档位、各档说明、当前对话的上下文占用和最近消息")
     @GetMapping("/session")
     public BaseResponse<CompanionSessionVO> getSession(@RequestParam long questionId, HttpServletRequest request) {
         return ResultUtils.success(companionService.getSession(userService.getLoginUser(request), questionId));
     }
 
-    @Operation(summary = "往前翻历史消息")
+    @Operation(summary = "往前翻对话里的历史消息")
     @GetMapping("/messages")
-    public BaseResponse<List<CompanionMessageVO>> listMessages(@RequestParam long questionId,
+    public BaseResponse<List<CompanionMessageVO>> listMessages(@RequestParam long conversationId,
                                                                @RequestParam(required = false) Long beforeId,
                                                                HttpServletRequest request) {
-        return ResultUtils.success(companionService.listMessages(userService.getLoginUser(request), questionId, beforeId));
+        return ResultUtils.success(companionService.listMessages(userService.getLoginUser(request), conversationId,
+                beforeId));
+    }
+
+    @Operation(summary = "本题的对话列表，最近活跃的在前")
+    @GetMapping("/conversations")
+    public BaseResponse<List<CompanionConversationVO>> listConversations(@RequestParam long questionId,
+                                                                         HttpServletRequest request) {
+        return ResultUtils.success(companionService.listConversations(userService.getLoginUser(request), questionId));
+    }
+
+    @Operation(summary = "开一段新对话（当前对话还没有消息时沿用它），返回切换后的会话")
+    @PostMapping("/conversation")
+    public BaseResponse<CompanionSessionVO> newConversation(@RequestBody CompanionNewConversationRequest newRequest,
+                                                            HttpServletRequest request) {
+        return ResultUtils.success(companionService.newConversation(userService.getLoginUser(request), newRequest));
+    }
+
+    @Operation(summary = "切换到之前的对话，返回切换后的会话")
+    @PutMapping("/conversation/active")
+    public BaseResponse<CompanionSessionVO> switchConversation(
+            @RequestBody CompanionSwitchConversationRequest switchRequest, HttpServletRequest request) {
+        return ResultUtils.success(companionService.switchConversation(userService.getLoginUser(request), switchRequest));
     }
 
     @Operation(summary = "判题结束后获取陪练的反应（同一次提交重复调用返回同一结果）")
@@ -71,7 +96,7 @@ public class CompanionController {
         return companionService.chat(userService.getLoginUser(request), chatRequest);
     }
 
-    @Operation(summary = "再给点提示（分级提示 1-4 级）")
+    @Operation(summary = "按当前档位给一条提示")
     @PostMapping("/hint")
     public BaseResponse<CompanionHintVO> hint(@RequestBody CompanionHintRequest hintRequest, HttpServletRequest request) {
         return ResultUtils.success(companionService.hint(userService.getLoginUser(request), hintRequest));
@@ -83,7 +108,7 @@ public class CompanionController {
         return companionService.solution(userService.getLoginUser(request), solutionRequest);
     }
 
-    @Operation(summary = "直接设置本题的提示等级（0 表示从头自己做）")
+    @Operation(summary = "设置本题的提示档位 0-4")
     @PutMapping("/level")
     public BaseResponse<CompanionHintStateVO> setLevel(@RequestBody CompanionLevelRequest levelRequest,
                                                        HttpServletRequest request) {

@@ -18,13 +18,10 @@ public class CompanionHintVO implements Serializable {
 
     private Long messageId;
 
-    @Schema(description = "这条提示的等级（解锁后的等级）")
+    @Schema(description = "这条提示按哪一档给的")
     private Integer hintLevel;
 
-    @Schema(description = "方向 idea / bug")
-    private String hintTrack;
-
-    @Schema(description = "这一级的名字，如「点出关键」")
+    @Schema(description = "这一档的名字，如「点关键」")
     private String stepTitle;
 
     private String message;

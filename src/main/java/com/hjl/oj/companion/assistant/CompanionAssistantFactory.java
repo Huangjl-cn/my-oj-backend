@@ -5,8 +5,8 @@ import com.hjl.oj.ai.model.ChatModelOptions;
 import com.hjl.oj.ai.model.ChatModelProvider;
 import com.hjl.oj.companion.guardrail.HintAnswerGuardrail;
 import com.hjl.oj.companion.guardrail.ReactionAnswerGuardrail;
+import com.hjl.oj.companion.memory.ConversationMemoryId;
 import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
-import com.hjl.oj.companion.memory.SessionMemoryId;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.guardrail.config.OutputGuardrailsConfig;
 import dev.langchain4j.memory.ChatMemory;
@@ -49,9 +49,9 @@ public class CompanionAssistantFactory {
     }
 
     /**
-     * 会话记忆：系统消息始终放在最前（利于前缀缓存），读写都直接落到数据库
+     * 对话记忆：系统消息始终放在最前（利于前缀缓存），读写都直接落到数据库
      */
-    public ChatMemory sessionMemory(SessionMemoryId memoryId) {
+    public ChatMemory conversationMemory(ConversationMemoryId memoryId) {
         return MessageWindowChatMemory.builder()
                 .id(memoryId)
                 .maxMessages(MAX_MEMORY_MESSAGES)

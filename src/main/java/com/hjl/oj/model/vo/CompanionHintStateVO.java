@@ -17,12 +17,10 @@ public class CompanionHintStateVO implements Serializable {
 
     private Long questionId;
 
-    @Schema(description = "已解锁的提示等级 0-5")
+    @Schema(description = "提示档位 0-5")
     private Integer hintLevel;
 
-    @Schema(description = "实际生效的等级")
+    @Schema(description = "实际生效的档位")
     private Integer effectiveLevel;
 
-    @Schema(description = "方向 idea / bug")
-    private String hintTrack;
 }

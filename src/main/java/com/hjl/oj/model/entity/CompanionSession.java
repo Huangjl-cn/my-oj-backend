@@ -5,14 +5,13 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
-import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 
 /**
- * AI 陪练会话：每个用户在每道题下一行
+ * AI 陪练会话：每个用户在每道题下一行，记录题目级的状态（提示档位、方向、当前对话）
  */
 @TableName(value = "companion_session")
 @Data
@@ -30,27 +29,19 @@ public class CompanionSession implements Serializable {
     private Long questionId;
 
     /**
-     * 已解锁的提示等级 0-5
+     * 提示档位 0-5，5 表示看过答案
      */
     private Integer hintLevel;
 
     /**
-     * 提示方向，见 HintTrackEnum
+     * 陪练判断的方向，见 HintTrackEnum；只给模型用，不展示给用户
      */
     private String hintTrack;
 
     /**
-     * 模型记忆（LangChain4j 消息序列化后的 JSON），读写只经过 MysqlChatMemoryStore
+     * 当前对话，见 CompanionConversation
      */
-    @ToString.Exclude
-    private String memory;
-
-    /**
-     * 最近一次调用的上下文 token 数
-     */
-    private Integer contextTokens;
-
-    private Date memoryUpdateTime;
+    private Long activeConversationId;
 
     private Date createTime;
 

@@ -51,10 +51,11 @@ LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 
 
 - **分层**：`ai/` 是通用 AI 基础设施（配置与校验、按用户 Key 创建模型、模拟模型、Key 加解密与校验、调用许可、错误翻译、用量日志），不依赖任何业务代码，以后的 AI 功能直接复用；`companion/` 是陪练的 AI 编排（AI Service 接口、分级规则、事实计算、提示词、工具、护栏、记忆、兜底话术）；接口和持久化沿用 controller / service / mapper 分层。依赖方向：controller → service → companion → ai。
 - **AI Service**（`companion/assistant/`）：聊天（流式、记忆、工具）、看答案（流式、思考模式、记忆）、提示和提交后反应（结构化输出 + 输出护栏）、记忆压缩。每次请求按用户的 Key、模型和改代码权限新建，不做单例。**系统提示词和用户消息只能通过 `@V` 变量代入**：框架会把模板当模板渲染，题目或代码里的 `{{` 直接作为模板会报错（见 `CompanionAssistantWiringTest`）。
-- **分级提示**（`companion/hint/HintLadder`）：两条线（找思路 IDEA / 找 bug BUG）各 0-5 级，等级表示"最多透露多少"；给用户看名字和说明，给模型看规则。改代码权限随等级放开（只修语法 → 可批注 → 每处 ≤3 行 → 不限），由 `CodeEditPolicy` 在 `edit_code` 工具里强制执行；文字回答的分寸由提示词约束。有问必答模式等同第 5 级。
+- **提示档位**（`companion/hint/HintLadder`）：0-5 档，表示"最多透露多少"，用户调 0-4，第 5 档只能通过看答案进入；提示接口按当前档位出，不改档位。用户只看到每档的名字和说明；每档按方向（找思路 IDEA / 找 bug BUG）各有一条给模型的规则，方向由模型判断、存在会话里，不展示给用户。改代码权限随档位放开（只修语法 → 可批注 → 每处 ≤3 行 → 不限），由 `CodeEditPolicy` 在 `edit_code` 工具里强制执行；文字回答的分寸由提示词约束。有问必答模式等同第 5 档。
 - **改代码**（`companion/edit/`）：修改只作用于请求带上来的代码快照，原文必须唯一匹配；返回 `CodeEditProposal`（baseHash + 每处明细 + resultCode），前端预览后由用户决定是否应用。
 - **事实由代码算，表达交给模型**（`companion/context/`）：提交后反应用到的"第几次、进步还是退步、连续同错、离上次多久"由 `SubmissionFactsBuilder` 计算；判题结果兼容 judgeInfo.message 中英文两种写法（`VerdictClassifier`）。
-- **记忆**（`companion/memory/`）：每人每题一段，存 `companion_session.memory`（LangChain4j 序列化格式，写入前去掉思考内容）。上下文占用达到窗口的 `ai.companion.compact-ratio`（默认 0.8）时发送前自动压缩，也可手动压缩：较早的对话整理成分节笔记、用户提问原文保留、最近 `keep-recent-rounds` 轮原样保留，超长时分段滚动压缩。提示和反应不挂记忆，提示的结果由服务层补写进记忆，反应在下一轮作为"最近的提交与你的反应"带进用户消息。
+- **会话与对话**：`companion_session` 每人每题一行（档位、方向、当前对话）；`companion_conversation` 是同一题下的多段对话，各有记忆和上下文占用；消息带 `conversationId`。聊天、提示、看答案、整理记忆都按请求里的 `conversationId` 操作，并把它设为当前对话，提交后的反应记在当前对话里。
+- **记忆**（`companion/memory/`）：每段对话一份，存 `companion_conversation.memory`（LangChain4j 序列化格式，写入前去掉思考内容）。上下文占用达到窗口的 `ai.companion.compact-ratio`（默认 0.8）时发送前自动压缩，也可手动压缩：较早的对话整理成分节笔记、用户提问原文保留、最近 `keep-recent-rounds` 轮原样保留，超长时分段滚动压缩。提示和反应不挂记忆，提示的结果由服务层补写进记忆，反应在下一轮作为"最近的提交与你的反应"带进用户消息。
 - **调用约束**：同一用户同一时间只有一个进行中的 AI 调用（`AiCallGuard`，单实例内生效）；提交后反应在没配 Key 或调用失败时用兜底话术（只表达情绪，不给解题信息），同一次提交重复调用返回同一结果。
 - **上下文占用**：流式结束时 LangChain4j 给的是整轮累计用量，当前上下文取最后一次调用的输入加输出（总数减去中间各次）。
 
