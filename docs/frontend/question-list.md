@@ -1,6 +1,6 @@
 # 题库页前端对接说明
 
-题库页顶部的进度和标签分类用到两个接口，返回格式与其他接口一致（`{code, data, message}`）。
+题库页顶部的进度和标签分类用到两个接口，题目列表另外支持按难度筛选，返回格式与其他接口一致（`{code, data, message}`）。
 
 ## 标签列表
 
@@ -29,3 +29,7 @@ GET /api/question/progress/my
 | `statuses` | 做过的题目的状态，key 为题目 id：`passed` 已通过 / `failed` 没通过 / `judging` 判题中；没做过的题不在其中 |
 
 通过过一次就算已通过，之后再提交错误也不影响。题库列表直接用 `statuses` 显示每题的状态，不用逐题请求提交记录。
+
+## 按难度筛选题目
+
+`POST /api/question/list/page/vo` 的请求体多了 `difficulty`：`easy` / `medium` / `hard`（也认 `简单` / `中等` / `困难`）。题目标签里的难度可能写成英文也可能写成中文，两种都会匹配；不认识的值不筛选。

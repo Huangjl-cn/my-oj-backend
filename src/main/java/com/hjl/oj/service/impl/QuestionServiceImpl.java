@@ -14,6 +14,7 @@ import com.hjl.oj.model.dto.question.JudgeCaseConfig;
 import com.hjl.oj.model.dto.question.QuestionQueryRequest;
 import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
+import com.hjl.oj.model.enums.QuestionDifficultyEnum;
 import com.hjl.oj.model.entity.QuestionStarterCode;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
@@ -209,6 +210,12 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                 queryWrapper.like("tags", "\"" + tag + "\"");
             }
         }
+        // 难度标签可能写成 easy 或 简单，两种都匹配
+        QuestionDifficultyEnum.fromTag(questionQueryRequest.getDifficulty()).ifPresent(difficulty ->
+                queryWrapper.and(wrapper -> wrapper
+                        .like("tags", "\"" + difficulty.getValue() + "\"")
+                        .or()
+                        .like("tags", "\"" + difficulty.getText() + "\"")));
         queryWrapper.eq(ObjectUtils.isNotEmpty(id), "id", id);
         queryWrapper.eq(ObjectUtils.isNotEmpty(userId), "userId", userId);
         queryWrapper.eq("isDelete", false);

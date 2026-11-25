@@ -36,6 +36,11 @@ public class QuestionQueryRequest extends PageRequest implements Serializable {
      * 标签列表（json 数组）
      */
     private List<String> tags;
+
+    /**
+     * 难度：easy / medium / hard（也认 简单 / 中等 / 困难），匹配标签里两种写法中的任意一种
+     */
+    private String difficulty;
     /**
      * 题目答案
      */
