@@ -41,6 +41,11 @@ public class QuestionQueryRequest extends PageRequest implements Serializable {
      * 难度：easy / medium / hard（也认 简单 / 中等 / 困难），匹配标签里两种写法中的任意一种
      */
     private String difficulty;
+
+    /**
+     * 只看当前用户还没通过的题（需要登录）
+     */
+    private Boolean unsolvedOnly;
     /**
      * 题目答案
      */

@@ -30,6 +30,8 @@ GET /api/question/progress/my
 
 通过过一次就算已通过，之后再提交错误也不影响。题库列表直接用 `statuses` 显示每题的状态，不用逐题请求提交记录。
 
-## 按难度筛选题目
+## 按难度、是否通过筛选题目
 
 `POST /api/question/list/page/vo` 的请求体多了 `difficulty`：`easy` / `medium` / `hard`（也认 `简单` / `中等` / `困难`）。题目标签里的难度可能写成英文也可能写成中文，两种都会匹配；不认识的值不筛选。
+
+请求体里 `unsolvedOnly: true` 只返回当前用户还没通过的题，需要登录（没登录返回未登录错误）。

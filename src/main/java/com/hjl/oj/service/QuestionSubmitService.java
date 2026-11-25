@@ -18,6 +18,7 @@ import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
 
 import java.util.Date;
+import java.util.List;
 
 public interface QuestionSubmitService extends IService<QuestionSubmit> {
 
@@ -85,6 +86,11 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
      * 当前用户的做题进度：各难度题目总数和已通过数，以及做过的每道题的状态
      */
     QuestionProgressVO getMyQuestionProgress(User loginUser);
+
+    /**
+     * 用户已经通过的题目 id
+     */
+    List<Long> listSolvedQuestionIds(long userId);
 
     /**
      * 取最老的一条待判题提交（仅取 id），无则返回 null。

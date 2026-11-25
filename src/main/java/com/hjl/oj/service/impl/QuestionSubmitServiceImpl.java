@@ -498,6 +498,15 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         return QuestionStats.buildProgress(questions, rows);
     }
 
+    @Override
+    public List<Long> listSolvedQuestionIds(long userId) {
+        return this.baseMapper.selectUserQuestionProgress(JudgeResultEnum.ACCEPTED.getSqlFragment(), userId)
+                .stream()
+                .filter(row -> row.getAccepted() != null && row.getAccepted() > 0)
+                .map(QuestionProgressRow::getQuestionId)
+                .toList();
+    }
+
     /**
      * 获取提交的指标排名数据：实时统计同题同语言、通过（Accepted）且指标有效的提交（含已通过的本人的提交），
      * 返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。

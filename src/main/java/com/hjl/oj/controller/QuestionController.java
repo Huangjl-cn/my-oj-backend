@@ -1,6 +1,7 @@
 package com.hjl.oj.controller;
 
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hjl.oj.annotation.AuthCheck;
 import com.hjl.oj.common.BaseResponse;
@@ -287,8 +288,13 @@ public class QuestionController {
         long size = questionQueryRequest.getPageSize();
         // 限制爬虫
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
-        Page<Question> questionPage = questionService.page(new Page<>(current, size),
-                questionService.getQueryWrapper(questionQueryRequest));
+        QueryWrapper<Question> queryWrapper = questionService.getQueryWrapper(questionQueryRequest);
+        if (Boolean.TRUE.equals(questionQueryRequest.getUnsolvedOnly())) {
+            User loginUser = userService.getLoginUser(request);
+            List<Long> solvedIds = questionSubmitService.listSolvedQuestionIds(loginUser.getId());
+            queryWrapper.notIn(!solvedIds.isEmpty(), "id", solvedIds);
+        }
+        Page<Question> questionPage = questionService.page(new Page<>(current, size), queryWrapper);
         return ResultUtils.success(questionService.getQuestionVOPage(questionPage, request));
     }
 
