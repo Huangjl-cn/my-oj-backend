@@ -26,6 +26,8 @@ import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
+import com.hjl.oj.model.vo.SubmitCalendarVO;
+import com.hjl.oj.model.vo.SubmitDayVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
@@ -54,6 +56,11 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
      * 归档排序字段：提交时间
      */
     private static final String SORT_FIELD_CREATE_TIME = "createTime";
+    /**
+     * 做题日历最少、最多统计多少天
+     */
+    private static final int MIN_CALENDAR_DAYS = 7;
+    private static final int MAX_CALENDAR_DAYS = 366;
     /**
      * 归档排序字段：判题耗时（judgeInfo.time，ms）
      */
@@ -496,6 +503,28 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         List<QuestionProgressRow> rows = this.baseMapper.selectUserQuestionProgress(
                 JudgeResultEnum.ACCEPTED.getSqlFragment(), loginUser.getId());
         return QuestionStats.buildProgress(questions, rows);
+    }
+
+    @Override
+    public SubmitCalendarVO getMySubmitCalendar(User loginUser, int days) {
+        int range = Math.max(MIN_CALENDAR_DAYS, Math.min(MAX_CALENDAR_DAYS, days));
+        String acceptedSql = JudgeResultEnum.ACCEPTED.getSqlFragment();
+        List<SubmitDayVO> dayList = this.baseMapper.selectUserSubmitDays(acceptedSql, loginUser.getId(), range)
+                .stream()
+                .filter(row -> row.getDay() != null)
+                .map(row -> new SubmitDayVO(row.getDay(), toInt(row.getSubmitCount()), toInt(row.getAcceptedCount())))
+                .toList();
+        SubmitDayRow totals = this.baseMapper.selectUserSubmitTotals(acceptedSql, loginUser.getId());
+        SubmitCalendarVO vo = new SubmitCalendarVO();
+        vo.setDays(dayList);
+        vo.setRangeDays(range);
+        vo.setTotalSubmits(totals == null ? 0 : toInt(totals.getSubmitCount()));
+        vo.setAcceptedSubmits(totals == null ? 0 : toInt(totals.getAcceptedCount()));
+        return vo;
+    }
+
+    private static int toInt(Long value) {
+        return value == null ? 0 : (int) Math.min(Integer.MAX_VALUE, Math.max(0, value));
     }
 
     @Override

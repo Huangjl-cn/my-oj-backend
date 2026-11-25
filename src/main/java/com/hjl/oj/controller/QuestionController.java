@@ -104,6 +104,17 @@ public class QuestionController {
     }
 
     /**
+     * 当前用户的做题日历：最近 days 天（默认 365，7～366）每天的提交次数，以及全部提交统计
+     */
+    @GetMapping("/progress/calendar")
+    public BaseResponse<SubmitCalendarVO> getMySubmitCalendar(
+            @RequestParam(value = "days", defaultValue = "365") int days,
+            HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getMySubmitCalendar(loginUser, days));
+    }
+
+    /**
      * 创建
      */
     @PostMapping("/add")

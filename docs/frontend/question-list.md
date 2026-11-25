@@ -35,3 +35,19 @@ GET /api/question/progress/my
 `POST /api/question/list/page/vo` 的请求体多了 `difficulty`：`easy` / `medium` / `hard`（也认 `简单` / `中等` / `困难`）。题目标签里的难度可能写成英文也可能写成中文，两种都会匹配；不认识的值不筛选。
 
 请求体里 `unsolvedOnly: true` 只返回当前用户还没通过的题，需要登录（没登录返回未登录错误）。
+
+## 我的做题日历
+
+```http
+GET /api/question/progress/calendar?days=365
+```
+
+需要登录。`days` 默认 365，范围 7～366，超出按边界算。
+
+| 字段 | 说明 |
+|---|---|
+| `days` | 最近 `rangeDays` 天（含今天）里有提交的日子，按日期从早到晚：`{date: "2026-11-25", submitCount, acceptedCount}`；没提交的日子不在其中 |
+| `rangeDays` | 实际统计的天数 |
+| `totalSubmits` / `acceptedSubmits` | 全部的提交次数和其中通过的次数（不限时间） |
+
+日期按数据库里的提交时间算。连续做题天数等由前端根据 `days` 计算。

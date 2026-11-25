@@ -81,4 +81,26 @@
         GROUP BY questionId
     </select>
 
+    <!-- 用户最近 days 天（含今天）每天的提交次数；日期按数据库时间算，和 createTime 一致 -->
+    <select id="selectUserSubmitDays" resultType="com.hjl.oj.model.dto.questionsubmit.SubmitDayRow">
+        SELECT DATE_FORMAT(createTime, '%Y-%m-%d') AS day,
+               COUNT(*) AS submitCount,
+               SUM(CASE WHEN ${acceptedSql} THEN 1 ELSE 0 END) AS acceptedCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND createTime &gt;= DATE_SUB(CURDATE(), INTERVAL #{days} - 1 DAY)
+        GROUP BY DATE_FORMAT(createTime, '%Y-%m-%d')
+        ORDER BY day
+    </select>
+
+    <!-- 用户全部的提交次数和通过次数 -->
+    <select id="selectUserSubmitTotals" resultType="com.hjl.oj.model.dto.questionsubmit.SubmitDayRow">
+        SELECT COUNT(*) AS submitCount,
+               COALESCE(SUM(CASE WHEN ${acceptedSql} THEN 1 ELSE 0 END), 0) AS acceptedCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+    </select>
+
 </mapper>

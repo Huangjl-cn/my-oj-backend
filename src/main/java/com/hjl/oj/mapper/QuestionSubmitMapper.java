@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow;
+import com.hjl.oj.model.dto.questionsubmit.SubmitDayRow;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import org.apache.ibatis.annotations.Param;
 
@@ -74,4 +75,17 @@ public interface QuestionSubmitMapper extends BaseMapper<QuestionSubmit> {
      */
     List<QuestionProgressRow> selectUserQuestionProgress(@Param("acceptedSql") String acceptedSql,
                                                          @Param("userId") long userId);
+
+    /**
+     * 用户最近 days 天（含今天）每天的提交次数和通过次数，只有有提交的日子
+     */
+    List<SubmitDayRow> selectUserSubmitDays(@Param("acceptedSql") String acceptedSql,
+                                            @Param("userId") long userId,
+                                            @Param("days") int days);
+
+    /**
+     * 用户全部的提交次数和通过次数（day 为空）
+     */
+    SubmitDayRow selectUserSubmitTotals(@Param("acceptedSql") String acceptedSql,
+                                        @Param("userId") long userId);
 }
