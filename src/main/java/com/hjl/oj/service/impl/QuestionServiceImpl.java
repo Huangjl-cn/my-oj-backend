@@ -18,11 +18,13 @@ import com.hjl.oj.model.entity.QuestionStarterCode;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.vo.QuestionStarterCodeVO;
+import com.hjl.oj.model.vo.QuestionTagVO;
 import com.hjl.oj.model.vo.QuestionVO;
 import com.hjl.oj.model.vo.UserVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionStarterCodeService;
 import com.hjl.oj.service.UserService;
+import com.hjl.oj.utils.QuestionStats;
 import com.hjl.oj.utils.SqlUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -169,6 +171,14 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question> i
                     return QuestionStarterCodeVO.objToVo(starterCode);
                 })
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<QuestionTagVO> listTagStats() {
+        List<Question> questions = this.list(new QueryWrapper<Question>()
+                .select("id", "tags")
+                .eq("isDelete", false));
+        return QuestionStats.countTags(questions);
     }
 
     /**

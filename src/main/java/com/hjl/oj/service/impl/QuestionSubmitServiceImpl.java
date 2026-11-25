@@ -20,6 +20,7 @@ import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.JudgeResultEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
 import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
@@ -28,6 +29,7 @@ import com.hjl.oj.model.vo.QuestionSubmitVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
+import com.hjl.oj.utils.QuestionStats;
 import com.hjl.oj.utils.SqlUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -485,6 +487,16 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
     }
 
     // endregion
+
+    @Override
+    public QuestionProgressVO getMyQuestionProgress(User loginUser) {
+        List<Question> questions = questionService.list(new QueryWrapper<Question>()
+                .select("id", "tags")
+                .eq("isDelete", false));
+        List<QuestionProgressRow> rows = this.baseMapper.selectUserQuestionProgress(
+                JudgeResultEnum.ACCEPTED.getSqlFragment(), loginUser.getId());
+        return QuestionStats.buildProgress(questions, rows);
+    }
 
     /**
      * 获取提交的指标排名数据：实时统计同题同语言、通过（Accepted）且指标有效的提交（含已通过的本人的提交），

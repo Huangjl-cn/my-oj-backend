@@ -2,6 +2,7 @@ package com.hjl.oj.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow;
 import com.hjl.oj.model.entity.QuestionSubmit;
@@ -64,8 +65,13 @@ public interface QuestionSubmitMapper extends BaseMapper<QuestionSubmit> {
                                                                @Param("language") String language,
                                                                @Param("time") Long time,
                                                                @Param("memory") Long memory);
+
+    /**
+     * 用户在每道题上的提交汇总：是否通过过、是否有还在判题的提交（只统计未删除的题）
+     *
+     * @param acceptedSql Accepted 筛选片段（服务端枚举常量，来自 JudgeResultEnum）
+     * @param userId      用户 id
+     */
+    List<QuestionProgressRow> selectUserQuestionProgress(@Param("acceptedSql") String acceptedSql,
+                                                         @Param("userId") long userId);
 }
-
-
-
-

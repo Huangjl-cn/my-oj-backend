@@ -10,6 +10,7 @@ import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
 import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
@@ -79,6 +80,11 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
      * 返回人群总数与指标大于等于本次提交（含本人与持平）的数量，比例由前端计算展示。
      */
     QuestionSubmitRankVO getQuestionSubmitRank(long submissionId);
+
+    /**
+     * 当前用户的做题进度：各难度题目总数和已通过数，以及做过的每道题的状态
+     */
+    QuestionProgressVO getMyQuestionProgress(User loginUser);
 
     /**
      * 取最老的一条待判题提交（仅取 id），无则返回 null。

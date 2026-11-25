@@ -8,6 +8,7 @@ import com.hjl.oj.model.dto.question.QuestionQueryRequest;
 import com.hjl.oj.model.dto.question.QuestionStarterCodeSaveRequest;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.vo.QuestionStarterCodeVO;
+import com.hjl.oj.model.vo.QuestionTagVO;
 import com.hjl.oj.model.vo.QuestionVO;
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -60,6 +61,11 @@ public interface QuestionService extends IService<Question> {
      * 获取查询条件
      */
     QueryWrapper<Question> getQueryWrapper(QuestionQueryRequest questionQueryRequest);
+
+    /**
+     * 题库里用到的标签和各自的题目数，不含难度标签，用得多的在前
+     */
+    List<QuestionTagVO> listTagStats();
 
     /**
      * 获取题目封装

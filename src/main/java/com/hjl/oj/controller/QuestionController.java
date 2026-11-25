@@ -86,6 +86,23 @@ public class QuestionController {
     }
 
     /**
+     * 题库里用到的标签（不含难度标签），用得多的在前
+     */
+    @GetMapping("/tags")
+    public BaseResponse<List<QuestionTagVO>> listQuestionTags() {
+        return ResultUtils.success(questionService.listTagStats());
+    }
+
+    /**
+     * 当前用户的做题进度：各难度题目总数和已通过数，以及做过的每道题的状态
+     */
+    @GetMapping("/progress/my")
+    public BaseResponse<QuestionProgressVO> getMyQuestionProgress(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getMyQuestionProgress(loginUser));
+    }
+
+    /**
      * 创建
      */
     @PostMapping("/add")

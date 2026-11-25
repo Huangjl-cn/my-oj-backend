@@ -69,4 +69,16 @@
           AND language = #{language}
           AND isDelete = 0
     </select>
+    <!-- acceptedSql 为 JudgeResultEnum.ACCEPTED 的服务端常量片段 -->
+    <select id="selectUserQuestionProgress" resultType="com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow">
+        SELECT questionId,
+               MAX(CASE WHEN ${acceptedSql} THEN 1 ELSE 0 END) AS accepted,
+               MAX(CASE WHEN status IN (0, 1) THEN 1 ELSE 0 END) AS pending
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND questionId IN (SELECT id FROM question WHERE isDelete = 0)
+        GROUP BY questionId
+    </select>
+
 </mapper>
