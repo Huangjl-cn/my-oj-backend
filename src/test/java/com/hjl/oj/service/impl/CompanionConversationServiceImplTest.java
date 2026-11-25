@@ -110,7 +110,7 @@ class CompanionConversationServiceImplTest {
 
         assertEquals(List.of(3L, 5L), list.stream().map(CompanionConversationVO::getId).toList());
         assertEquals(List.of(true, false), list.stream().map(CompanionConversationVO::getActive).toList());
-        assertEquals(List.of(0L, 4L), list.stream().map(CompanionConversationVO::getMessageCount).toList());
+        assertEquals(List.of(0, 4), list.stream().map(CompanionConversationVO::getMessageCount).toList());
     }
 
     @Test

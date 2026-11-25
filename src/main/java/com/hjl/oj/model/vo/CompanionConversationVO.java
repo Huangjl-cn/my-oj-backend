@@ -22,7 +22,7 @@ public class CompanionConversationVO implements Serializable {
     private String title;
 
     @Schema(description = "消息条数")
-    private Long messageCount;
+    private Integer messageCount;
 
     @Schema(description = "是否为当前对话")
     private Boolean active;

@@ -116,7 +116,7 @@ public class CompanionConversationServiceImpl extends ServiceImpl<CompanionConve
                     CompanionConversationVO vo = new CompanionConversationVO();
                     vo.setId(conversation.getId());
                     vo.setTitle(conversation.getTitle());
-                    vo.setMessageCount(counts.getOrDefault(conversation.getId(), 0L));
+                    vo.setMessageCount(counts.getOrDefault(conversation.getId(), 0L).intValue());
                     vo.setActive(Objects.equals(conversation.getId(), session.getActiveConversationId()));
                     vo.setCreateTime(conversation.getCreateTime());
                     vo.setUpdateTime(conversation.getUpdateTime());
