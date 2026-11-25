@@ -93,6 +93,7 @@ LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 
 - 加载 Spring 上下文的测试统一用 `@ActiveProfiles({"dev", "test"})`，上下文不连数据库。
 - `CodeSandboxTest` 调用真实沙箱，默认跳过；需要时设 `RUN_SANDBOX_TESTS=true`，沙箱地址用 `CODESANDBOX_URL`。其他测试用 mock 或本机临时端口（参考 `RemoteCodeSandboxTest`）。
 - 测试类命名 `*Test`，方法名描述被测行为。
+- Mockito 由 surefire 以 `-javaagent` 加载（见 pom）。在 IDE 里直接运行测试报 MockMaker 初始化失败时，给 JVM 加同样的 `-javaagent:<mockito-core jar>`。
 
 ## 编码约定
 

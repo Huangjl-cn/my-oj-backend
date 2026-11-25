@@ -116,6 +116,27 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+            <!-- 把每个依赖的 jar 路径暴露成属性（如 ${org.mockito:mockito-core:jar}），供下面的 surefire 引用 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- JDK 21 起不再默认允许运行时自挂 agent，部分 Windows 环境还会直接拒绝；
+                 按 Mockito 官方建议在启动测试 JVM 时以 -javaagent 显式加载 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
