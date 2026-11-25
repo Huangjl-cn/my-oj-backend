@@ -32,7 +32,7 @@ class CompanionPromptsTest {
         assertTrue(system.contains("输入 {{1,2},{3,4}}，输出 $10"));
         assertTrue(system.contains("{{1,2},{3,4}};"));
         assertTrue(system.contains("时间限制：1000 ms；内存限制：65536 KB"));
-        assertTrue(system.contains("「给个反例」"));
+        assertTrue(system.contains("「说方法」") && system.contains("反例"));
     }
 
     @Test
