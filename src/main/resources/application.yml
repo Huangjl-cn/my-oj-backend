@@ -12,6 +12,17 @@ spring:
 server:
   servlet:
     context-path: /api
+# 只开放健康检查 /api/actuator/health，只返回 UP / DOWN，不暴露组件明细（容器 healthcheck 和部署脚本用；
+# 包含数据库连接检查，数据库连不上时是 DOWN）。nginx 对外屏蔽了 /api/actuator/
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: false
