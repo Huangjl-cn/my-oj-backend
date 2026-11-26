@@ -79,20 +79,44 @@ mvn test   # 不依赖数据库和沙箱
 RUN_SANDBOX_TESTS=true CODESANDBOX_URL=http://<沙箱地址>:8100 mvn test -Dtest=CodeSandboxTest
 ```
 
-## Docker 部署
+## 部署
 
-服务器上只需要 `deploy/` 目录。在开发机上准备好后上传：
+### 自动部署（日常上线）
 
-```bash
-mvn clean package
-cp target/my-oj.jar deploy/oj-backend/my-oj.jar        # 应用
-cp sql/create_table.sql deploy/oj-backend/init.sql      # 首次初始化数据库时执行的建表脚本
-cp deploy/.env.example deploy/.env                      # 首次部署：填写变量（见下表），之后保留服务器上的 .env
-# 上传 deploy/ 到服务器后，在服务器的 deploy 目录执行：
-docker compose up -d --build
+由 GitHub Actions 完成，流水线在 `.github/workflows/`：
+
+- **每次 push 和 PR**：`ci.yml` 跑 `mvn verify`。
+- **合进 master**：`deploy.yml` 构建 jar，在 GitHub 的 `production` 环境里批准后，通过 SSH 把 jar、Dockerfile、`docker-compose.yml` 和建表脚本送到服务器。服务器上的 `deploy/server/deploy.sh` 接手：
+  1. 构建镜像 `my-oj-backend:<提交号>`；
+  2. 执行 `sql/create_table.sql`（只建不存在的表，不用再手动执行）；
+  3. 把镜像标成 `current` 并重建后端容器；
+  4. 等健康检查 `/api/actuator/health` 通过，不通过就切回上一版本。
+- **重新部署旧提交**：Actions → Deploy → Run workflow，填提交号。
+- **在服务器上立即切回上一版**：`sudo -u deploy /opt/my-oj-deploy/deploy.sh rollback backend`；`status` 查看当前版本。
+
+前端仓库的部署走同一个 `deploy.sh`（`frontend` 命令）。部署钥匙在服务器上被限定为只能执行这个脚本。
+
+服务器第一次接入自动部署时，用 root 运行一次 `deploy/server/setup-server.sh`（先加 `--check` 只看不改）。它会：
+- 建部署账号 `deploy` 和部署钥匙；
+- 把前端改成版本目录结构；
+- 把正在运行的后端记成第一个版本。
+
+### 服务器目录
+
+```
+my-oj/
+├── docker-compose.yml        # 来自本仓库 deploy/，部署时自动同步
+├── .env                      # 秘密，只在服务器上，见下表
+├── oj-backend/               # Dockerfile、init.sql（数据库首次初始化用）
+├── oj-frontend/
+│   ├── nginx.conf            # 来自前端仓库，部署时自动同步
+│   ├── www/releases/<时间-提交号>/   # 前端各版本，保留最近 5 个
+│   ├── www/current -> releases/...    # 正在用的版本
+│   └── certs/、acme-challenge/
+└── .deploy/                  # 部署记录和日志（deploy.log）
 ```
 
-- 启动 MySQL（宿主机 127.0.0.1:3307）、后端（127.0.0.1:8101）和前端 nginx（80/443）。前端的静态文件、`nginx.conf` 和证书放在 `deploy/oj-frontend/`，来自前端仓库。
+- 启动 MySQL（宿主机 127.0.0.1:3307）、后端（127.0.0.1:8101）和前端 nginx（80/443）。
 - 镜像固定使用 prod profile，接口文档和 SQL 日志关闭。
 - 应用使用只授权 `oj_db` 的 `oj_app` 账号；root 只能在容器内登录：`docker exec -it my-oj-db mysql -uroot -p`。账号在首次初始化数据卷时创建。
 
@@ -107,7 +131,20 @@ docker compose up -d --build
 | `CODESANDBOX_AUTH_PRIVATE_KEY` | 签名私钥（Base64 PKCS#8），生成方法见[沙箱调用鉴权](./docs/sandbox-auth/README.md) | 是 |
 | `AI_KEY_ENCRYPTION_KEY` | 加密用户 AI API Key 的主密钥，`openssl rand -base64 32` 生成；部署后不要更换 | 是 |
 
-上线新版本前，在线上库再执行一遍 `sql/create_table.sql`（全是"不存在才建"），补上新增的表。
+### 手动部署（自动部署不可用时）
+
+```bash
+mvn clean package
+# 把 target/my-oj.jar 和 deploy/oj-backend/Dockerfile 上传到服务器的同一个目录，在那里执行：
+docker build -t my-oj-backend:manual .
+docker tag my-oj-backend:manual my-oj-backend:current
+# 在服务器的 my-oj 目录执行：
+docker exec -i my-oj-db sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql -uoj_app' < create_table.sql
+docker compose up -d --no-deps --force-recreate my-oj-backend
+docker exec my-oj-frontend nginx -s reload   # 后端换了容器，让 nginx 重新解析地址
+```
+
+全新服务器首次部署：上传本仓库的 `deploy/` 目录，复制 `sql/create_table.sql` 为 `oj-backend/init.sql`、`.env.example` 为 `.env` 并填写，按上面的方法构建 `my-oj-backend:current`，执行 `docker compose up -d`，再运行 `setup-server.sh` 接入自动部署。
 
 ## 项目结构
 
@@ -135,7 +172,7 @@ src/main/java/com/hjl/oj/
 ## 相关仓库
 
 - [my-oj-sandbox](https://github.com/Huangjl-cn/my-oj-sandbox)：代码沙箱，在 Docker 容器中隔离编译、执行用户代码。本地联调见上面的“联调真实沙箱”。
-- 前端：单独的仓库，部署时把构建产物放到 `deploy/oj-frontend/`。
+- 前端：单独的仓库，有自己的 CI 和部署流水线，部署时同样调用服务器上的 `deploy.sh`。
 
 ## 更多文档
 

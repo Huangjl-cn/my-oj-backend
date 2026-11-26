@@ -43,10 +43,10 @@ services:
       - my-oj-network
 
   my-oj-backend:
-    build:
-      context: ./oj-backend
-      dockerfile: Dockerfile
-    image: my-oj-backend:2.0.1
+    # 镜像由部署脚本 server/deploy.sh 构建：每个版本打 my-oj-backend:<提交号>，正在用的那个再标成 current，
+    # 回滚就是把 current 指回旧版本。这里不写 build，免得手动 up --build 用 oj-backend/ 下的旧 jar 覆盖掉 current
+    image: my-oj-backend:current
+    pull_policy: never
     container_name: my-oj-backend
     restart: unless-stopped
     environment:
@@ -62,13 +62,22 @@ services:
       - "127.0.0.1:8101:8101"
     volumes:
       - my-oj-backend-logs:/app/logs
+    # 部署脚本等它变成 healthy 才算上线成功，否则切回上一版本；启动慢，前 3 分钟的失败不算
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8101/api/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     depends_on:
       my-oj-db:
         condition: service_healthy
     networks:
       - my-oj-network
 
-  # 前端 Nginx 服务：静态文件、nginx.conf 和证书放在 deploy/oj-frontend/（来自前端仓库，不在本仓库）
+  # 前端 Nginx 服务：nginx.conf 来自前端仓库，证书只放在服务器上。
+  # 静态文件按版本放在 oj-frontend/www/releases/<时间-提交号>/，www/current 链接指向正在用的版本（见 server/deploy.sh）；
+  # 必须挂载 www 整个目录：直接挂 current 的话，Docker 在挂载时就把链接解析死了，之后切换版本容器里看不到
   my-oj-frontend:
     image: nginx:1.30.4-alpine
     container_name: my-oj-frontend
@@ -78,7 +87,7 @@ services:
       - "443:443"
     volumes:
       - ./oj-frontend/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./oj-frontend/dist:/usr/share/nginx/html:ro
+      - ./oj-frontend/www:/usr/share/nginx/www:ro
       - ./oj-frontend/certs:/etc/nginx/certs:ro
       - ./oj-frontend/acme-challenge:/var/www/acme
     depends_on:

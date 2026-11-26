@@ -21,7 +21,7 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 - 前置条件：JDK 21、Maven 3.6.3+。clone 后不需要任何配置文件。
 - 在 IDE 里运行 `MainApplication` 时加 VM 参数 `-Dspring.profiles.active=dev`。
 - 接口文档（仅 dev）：`http://localhost:8102/api/doc.html`。
-- 建表脚本 `sql/create_table.sql` 创建 `oj_db`、四张表（user / question / question_starter_code / question_submit）和开发用管理员 admin / 12345678，可重复执行。它是表结构的唯一来源，改表结构时同步修改它。
+- 建表脚本 `sql/create_table.sql` 创建 `oj_db`、各张表和开发用管理员 admin / 12345678（只在 user 表为空时插入）。它是表结构的唯一来源，改表结构时同步修改它。每次上线部署脚本都会在线上库重新执行它，所以只能写"不存在才建"的语句；给已有的表加字段、改字段，它覆盖不到，需要单独处理。
 
 ## 架构
 
@@ -109,10 +109,17 @@ LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 
 - 生产的数据库密码、沙箱签名私钥、AI Key 加密主密钥只通过服务器上的 `deploy/.env` 注入，不进仓库、镜像和日志。主密钥部署后不要更换，否则已保存的用户 Key 全部无法解密。
 - 与环境有关的值放在 profile 配置中，不写进公共配置或代码。
 
-## 部署（`deploy/`）
+## 部署（`deploy/` 和 `.github/workflows/`）
 
-- `oj-backend/Dockerfile`：amazoncorretto:21-alpine，固定 `SPRING_PROFILES_ACTIVE=prod`，以非 root 用户运行。构建前把 `target/my-oj.jar` 复制为 `deploy/oj-backend/my-oj.jar`，把 `sql/create_table.sql` 复制为 `deploy/oj-backend/init.sql`（两者都不入库）。
-- `docker-compose.yml`：MySQL 8.4（宿主机 127.0.0.1:3307）+ 后端（127.0.0.1:8101）+ 前端 nginx（`deploy/oj-frontend/` 来自前端仓库，不在本仓库）。只通过环境变量传值，变量模板见 `deploy/.env.example`。应用使用 `oj_app` 账号，root 只允许容器内登录；这两项只在首次初始化数据卷时生效。
+- **流水线**：`ci.yml` 在每次 push 和 PR 时跑 `mvn verify`；`deploy.yml` 在合进 master 后构建 jar，经 GitHub `production` 环境批准，用 SSH 把 jar、Dockerfile、`docker-compose.yml` 和 `sql/create_table.sql` 打包送到服务器。部署所需的 `DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_SSH_KEY` / `DEPLOY_KNOWN_HOSTS` 是 production 环境的密钥，应用的秘密不进 GitHub。
+- **`server/deploy.sh`**：服务器上的部署脚本，前后端共用，装在 `/opt/my-oj-deploy/`，部署钥匙在 authorized_keys 里被限定为只能执行它（参数来自 `SSH_ORIGINAL_COMMAND`）。
+  - 后端：构建 `my-oj-backend:<提交号>` → 执行建表脚本 → 标成 `current` 并重建容器 → 等 healthcheck 通过 → reload nginx（容器 IP 可能变）；不通过就切回上一版本。
+  - 前端：放进 `oj-frontend/www/releases/<时间-提交号>/`（补上上一版本自己的 js/assets，防止开着的旧页面加载失败）→ 原子切换 `www/current` → nginx.conf 原地写入并 reload（单文件挂载，不能换 inode）。
+  - 各保留最近 5 个版本，`rollback frontend|backend` 切回上一个。仓库公开、Actions 日志所有人可见，所以脚本输出不含容器日志和任何配置值，容器日志只写进服务器的 `.deploy/deploy.log`。
+- **`server/setup-server.sh`**：服务器一次性准备（建 `deploy` 账号、钥匙、版本目录，把正在运行的后端记为 `initial`），可重复执行，`--check` 只检查不改。
+- `oj-backend/Dockerfile`：amazoncorretto:21-alpine，固定 `SPRING_PROFILES_ACTIVE=prod`，以非 root 用户运行。
+- `docker-compose.yml`：MySQL 8.4（宿主机 127.0.0.1:3307）+ 后端（127.0.0.1:8101，镜像固定 `my-oj-backend:current`，不写 build，healthcheck 打 `/api/actuator/health`）+ 前端 nginx（挂载 `oj-frontend/www`，nginx.conf 来自前端仓库）。只通过环境变量传值，变量模板见 `deploy/.env.example`。应用使用 `oj_app` 账号，root 只允许容器内登录；这两项只在首次初始化数据卷时生效。
+- 健康检查：actuator 只开放 `health`，不返回组件明细（`application.yml` 的 `management.*`，见 `ActuatorEndpointTest`）；nginx 对外屏蔽 `/api/actuator/`。
 - `docker-compose.dev.yml`：只用于本地开发的 MySQL，与生产无关。
 
 ## 提交与合并请求
