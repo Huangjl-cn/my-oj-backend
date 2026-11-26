@@ -206,7 +206,7 @@ class DeepSeekLiveTest {
         AiProperties properties = new AiProperties();
         properties.getDeepseek().setBaseUrl(BASE_URL);
         properties.getDeepseek().setTimeout(Duration.ofMinutes(3));
-        properties.getCompanion().setPersonaName("栗子");
+        properties.getCompanion().setPersonaName("鸭鸭");
         properties.getCompanion().setMaxCodeChars(20_000);
         return properties;
     }

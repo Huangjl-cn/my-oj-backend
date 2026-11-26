@@ -48,7 +48,7 @@ class AiConfigTest {
         model.setDisplayName("DeepSeek Flash");
         model.setContextWindow(1_000_000);
         properties.getDeepseek().setModels(List.of(model));
-        properties.getCompanion().setPersonaName("栗子");
+        properties.getCompanion().setPersonaName("鸭鸭");
         return properties;
     }
 }

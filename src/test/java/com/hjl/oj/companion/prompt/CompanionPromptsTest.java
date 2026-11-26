@@ -28,7 +28,7 @@ class CompanionPromptsTest {
 
         String system = prompts.systemMessage(question);
 
-        assertTrue(system.contains("「栗子」"));
+        assertTrue(system.contains("「鸭鸭」"));
         assertTrue(system.contains("输入 {{1,2},{3,4}}，输出 $10"));
         assertTrue(system.contains("{{1,2},{3,4}};"));
         assertTrue(system.contains("时间限制：1000 ms；内存限制：65536 KB"));
@@ -88,7 +88,7 @@ class CompanionPromptsTest {
 
     private static AiProperties properties() {
         AiProperties properties = new AiProperties();
-        properties.getCompanion().setPersonaName("栗子");
+        properties.getCompanion().setPersonaName("鸭鸭");
         properties.getCompanion().setMaxCodeChars(100);
         return properties;
     }

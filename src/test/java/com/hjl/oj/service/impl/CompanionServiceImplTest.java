@@ -115,7 +115,7 @@ class CompanionServiceImplTest {
     void setUp() {
         AiProperties properties = new AiProperties();
         properties.setMode(AiMode.MOCK);
-        properties.getCompanion().setPersonaName("栗子");
+        properties.getCompanion().setPersonaName("鸭鸭");
         service = new CompanionServiceImpl(questionService, questionSubmitService, aiSettingService, sessionService,
                 conversationService, messageService, assistantFactory, prompts, mock(MemoryCompactor.class), memoryStore,
                 aiCallGuard, properties);
