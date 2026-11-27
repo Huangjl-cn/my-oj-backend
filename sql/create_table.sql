@@ -176,3 +176,20 @@ create table if not exists question_list_item
     unique key uk_list_question (listId, questionId),
     index idx_question (questionId)
 ) comment '题单里的题' collate = utf8mb4_unicode_ci;
+
+-- 笔记：可以挂在某道题上（questionId），也可以是不挂题的自由笔记；一道题可以有多篇
+-- version 每次保存加一，保存时带上读到的版本号，对不上说明在别处改过了
+create table if not exists note
+(
+    id         bigint auto_increment comment 'id' primary key,
+    userId     bigint                             not null comment '作者 id',
+    questionId bigint                             null comment '关联的题目 id，自由笔记为空',
+    title      varchar(128)                       not null comment '标题',
+    content    mediumtext                         null comment '正文（Markdown）',
+    version    int      default 0                 not null comment '版本号，每次保存加一',
+    createTime datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    isDelete   tinyint  default 0                 not null comment '是否删除',
+    index idx_user_update (userId, updateTime),
+    index idx_user_question (userId, questionId)
+) comment '笔记' collate = utf8mb4_unicode_ci;

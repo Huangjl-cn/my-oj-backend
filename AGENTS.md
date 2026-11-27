@@ -54,6 +54,14 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 - 已删除的题不显示也不计数：查题单里的题统一走 `selectActiveItems`（JOIN 未删除的题）。卡片上的题目数和已通过数（`listSolvedQuestionIds`）对所有题单一次查出，不逐个查。
 - 限制：每人 50 个自建题单，每个题单 500 道题（收藏 2000）；标题 40 字、简介 200 字。改名用 `UpdateWrapper.set` 写入，简介清空时写成 null（`updateById` 会跳过 null 字段）。
 
+### 笔记（`NoteServiceImpl`，接口 `/note/*`）
+
+- 表 `note`：`questionId` 可空（自由笔记），一道题可以有多篇；只有作者能看能改，别人的当作不存在（NOT_FOUND）。
+- 保存带版本号：`UpdateWrapper` 条件里带 `version`，`setSql("version = version + 1")`；没更新到时再查一次，区分「不存在」和「在别处改过了」（`ErrorCode.CONFLICT_ERROR` 40900）。
+- 列表按 `updateTime` 倒序，只取 `LEFT(content, 400)` 交给 `NoteSnippets.plain` 做摘要；关键词在标题和正文里 LIKE，`escapeLike` 让 `%`、`_` 按普通字符找。
+- 自由笔记没有题目：取题目信息用 `questionOf`（`Map.of()` 不能用 null 查）。
+- 限制：每人 2000 篇，标题 80 字，正文 10 万字；挂题时默认标题「题目名 笔记」，否则「未命名笔记」。
+
 ### AI 陪练（`ai/` + `companion/`）
 
 LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 API Key。前端对接见 `docs/frontend/ai-companion.md`。
