@@ -148,6 +148,50 @@ create table if not exists companion_message
     index idx_submissionId (submissionId)
 ) comment 'AI 陪练消息' collate = utf8mb4_unicode_ci;
 
+-- 鸭鸭的轨迹：每一轮（一次聊天、提示、看答案、提交后反应、整理记忆）一行。
+-- 系统提示词和工具清单和这段对话上一轮一样时不重复存（为空，沿用上一轮的）；删对话时一起删
+create table if not exists companion_trace_turn
+(
+    id             bigint auto_increment comment 'id' primary key,
+    userId         bigint                                not null comment '用户 id',
+    questionId     bigint                                not null comment '题目 id',
+    conversationId bigint                                not null comment '所属对话 id',
+    type           varchar(16)                           not null comment 'chat 聊天 / hint 提示 / solution 看答案 / reaction 提交后反应 / compaction 整理记忆',
+    status         varchar(16)                           not null comment 'running 进行中 / ok 完成 / error 出错 / fallback 用了兜底话术',
+    userText       text                                  null comment '这一轮用户做了什么（聊天时是用户说的话）',
+    userPrompt     mediumtext                            null comment '发给模型的用户消息（场景、档位、代码、用户说的话）',
+    systemPrompt   mediumtext                            null comment '系统提示词；和上一轮相同时为空',
+    tools          mediumtext                            null comment '提供给模型的工具（json）；和上一轮相同时为空',
+    messageId      bigint                                null comment '这一轮产生的陪练消息 id',
+    error          varchar(512)                          null comment '出错原因',
+    startTime      datetime(3) default CURRENT_TIMESTAMP(3) not null comment '开始时间',
+    endTime        datetime(3)                           null comment '结束时间',
+    index idx_conversation_id (conversationId, id)
+) comment '鸭鸭的轨迹：每一轮' collate = utf8mb4_unicode_ci;
+
+-- 鸭鸭的轨迹：每一轮里的每一步，一次模型调用或一次工具调用
+create table if not exists companion_trace_step
+(
+    id             bigint auto_increment comment 'id' primary key,
+    turnId         bigint                                not null comment '所属的轮',
+    conversationId bigint                                not null comment '所属对话 id',
+    kind           varchar(16)                           not null comment 'model 模型调用 / tool 工具调用',
+    name           varchar(64)                           null comment '模型名或工具名',
+    input          mediumtext                            null comment '工具参数（json）',
+    output         mediumtext                            null comment '模型回答的正文 / 工具结果',
+    thinking       mediumtext                            null comment '模型的思考过程',
+    toolCalls      mediumtext                            null comment '模型发起的工具调用（json）',
+    inputTokens    int                                   null comment '输入 token',
+    cachedTokens   int                                   null comment '输入里命中缓存的 token',
+    outputTokens   int                                   null comment '输出 token',
+    finishReason   varchar(32)                           null comment '结束原因',
+    error          varchar(512)                          null comment '出错原因',
+    startTime      datetime(3)                           not null comment '开始时间',
+    durationMs     int                                   not null comment '耗时（毫秒）',
+    index idx_turn_id (turnId, id),
+    index idx_conversation_id (conversationId, id)
+) comment '鸭鸭的轨迹：每一步' collate = utf8mb4_unicode_ci;
+
 -- 题单：自建的、官方的（管理员建，所有人可见），以及每人一个「我的收藏」
 -- 收藏也是题单，第一次用到时自动建；uniqueKey = 'favorite:<userId>' 保证每人只有一个
 create table if not exists question_list

@@ -41,6 +41,27 @@ PUT  /api/companion/conversation/active  { "conversationId": "..." }   # 切回�
 - 切走时，没有任何消息的当前对话会被删掉；在某段对话里聊天、要提示也会把它设为当前对话。
 - 提交后的反应记在当前对话里。
 
+### 删除对话
+
+```http
+POST /api/companion/conversation/delete   { "conversationId": "..." }
+```
+
+物理删除：对话、消息、鸭鸭的记忆和轨迹一起删，找不回来；已经存进笔记的内容不受影响。删的是当前对话时换成本题最近的另一段，没有就开一段新的。返回删完后的会话（同 `GET /session`）。鸭鸭正在回答时返回 `42900`。
+
+### 轨迹
+
+```http
+GET /api/companion/trace?conversationId=...
+```
+
+返回 `{conversationId, title, recordedFromStart, fromMemory, systemPrompts, toolSets, turns}`：
+
+- `turns[]`：每一轮 `{id, type, status, userText, context, systemPromptIndex, toolSetIndex, messageId, error, startTime, durationMs, steps}`。`type` 是 chat / hint / solution / reaction / compaction；`status` 是 running / ok / error / fallback（提交后反应用了兜底话术）；`context` 是发给模型的用户消息里除「用户说」以外的各段 `{title, text}`（场景、当前提示状态、用户当前代码……）。
+- `steps[]`：按开始时间排，`kind` 为 `model`（`name` 模型名，`output` 正文，`thinking`，`toolCalls[{name, arguments}]`，`inputTokens` / `cachedTokens` / `outputTokens`，`finishReason`）或 `tool`（`name` 工具名，`input` 参数 JSON，`output` 结果）；都有 `startTime`、`durationMs`、出错时的 `error`。
+- `systemPrompts`、`toolSets` 去重存放，各轮按下标引用；没调用模型的一轮下标为空。`toolSets[]` 里每个工具是 `{name, description, parameters[{name, type, description, required}]}`。
+- `recordedFromStart` 为 false：对话开始于记录轨迹之前，更早的部分没有；`fromMemory` 为 true：这段对话没有记录，各轮是从鸭鸭的记忆还原的，没有时间和 token。
+
 ## 三、提示档位
 
 档位表示陪练最多透露多少，由用户自己调；陪练判断用户是没思路还是代码有 bug，用户看不到这个方向。

@@ -4,6 +4,7 @@ import com.hjl.oj.common.BaseResponse;
 import com.hjl.oj.common.ResultUtils;
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.dto.companion.CompanionCompactRequest;
+import com.hjl.oj.model.dto.companion.CompanionDeleteConversationRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionNewConversationRequest;
@@ -20,8 +21,10 @@ import com.hjl.oj.model.vo.CompanionNoteApplyVO;
 import com.hjl.oj.model.vo.CompanionNotePreviewVO;
 import com.hjl.oj.model.vo.CompanionReactionVO;
 import com.hjl.oj.model.vo.CompanionSessionVO;
+import com.hjl.oj.model.vo.CompanionTraceVO;
 import com.hjl.oj.service.CompanionNoteService;
 import com.hjl.oj.service.CompanionService;
+import com.hjl.oj.service.CompanionTraceService;
 import com.hjl.oj.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.annotation.Resource;
@@ -50,6 +53,9 @@ public class CompanionController {
 
     @Resource
     private CompanionNoteService companionNoteService;
+
+    @Resource
+    private CompanionTraceService companionTraceService;
 
     @Resource
     private UserService userService;
@@ -88,6 +94,19 @@ public class CompanionController {
     public BaseResponse<CompanionSessionVO> switchConversation(
             @RequestBody CompanionSwitchConversationRequest switchRequest, HttpServletRequest request) {
         return ResultUtils.success(companionService.switchConversation(userService.getLoginUser(request), switchRequest));
+    }
+
+    @Operation(summary = "删除一段对话：消息、记忆、轨迹一起删，删了找不回来；删的是当前对话时换成最近的另一段，返回删完后的会话")
+    @PostMapping("/conversation/delete")
+    public BaseResponse<CompanionSessionVO> deleteConversation(
+            @RequestBody CompanionDeleteConversationRequest deleteRequest, HttpServletRequest request) {
+        return ResultUtils.success(companionService.deleteConversation(userService.getLoginUser(request), deleteRequest));
+    }
+
+    @Operation(summary = "一段对话的轨迹：每一轮发给模型的内容、模型调用、工具调用、耗时和 token")
+    @GetMapping("/trace")
+    public BaseResponse<CompanionTraceVO> getTrace(@RequestParam long conversationId, HttpServletRequest request) {
+        return ResultUtils.success(companionTraceService.getTrace(userService.getLoginUser(request), conversationId));
     }
 
     @Operation(summary = "判题结束后获取陪练的反应（同一次提交重复调用返回同一结果）")

@@ -89,6 +89,23 @@ public class CompanionConversationServiceImpl extends ServiceImpl<CompanionConve
     }
 
     @Override
+    public CompanionConversation activateLatest(CompanionSession session) {
+        CompanionConversation latest = this.getOne(new QueryWrapper<CompanionConversation>()
+                .select(STATE_COLUMNS)
+                .eq("userId", session.getUserId())
+                .eq("questionId", session.getQuestionId())
+                .orderByDesc("updateTime", "id")
+                .last("limit 1"));
+        if (latest == null) {
+            // 会话还指着删掉的那段：getActive 找不到它，会开一段新的并设为当前
+            return getActive(session);
+        }
+        sessionService.updateActiveConversation(session.getId(), latest.getId());
+        session.setActiveConversationId(latest.getId());
+        return latest;
+    }
+
+    @Override
     public void activate(CompanionSession session, CompanionConversation conversation) {
         Long previousId = session.getActiveConversationId();
         if (Objects.equals(previousId, conversation.getId())) {

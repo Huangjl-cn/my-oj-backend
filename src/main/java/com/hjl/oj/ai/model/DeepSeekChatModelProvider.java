@@ -3,10 +3,12 @@ package com.hjl.oj.ai.model;
 import com.hjl.oj.ai.config.AiProperties;
 import com.hjl.oj.ai.listener.UsageLoggingListener;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +38,7 @@ public class DeepSeekChatModelProvider implements ChatModelProvider {
                 .maxRetries(1)
                 .customParameters(thinkingParameter(options.thinking()))
                 .returnThinking(options.thinking())
-                .listeners(List.of(new UsageLoggingListener(options.purpose())));
+                .listeners(listeners(options));
         if (options.jsonOutput()) {
             builder.responseFormat(JSON_OBJECT);
         }
@@ -53,11 +55,21 @@ public class DeepSeekChatModelProvider implements ChatModelProvider {
                 .accumulateToolCallId(false)
                 .customParameters(thinkingParameter(options.thinking()))
                 .returnThinking(options.thinking())
-                .listeners(List.of(new UsageLoggingListener(options.purpose())));
+                .listeners(listeners(options));
         if (options.jsonOutput()) {
             builder.responseFormat(JSON_OBJECT);
         }
         return builder.build();
+    }
+
+    /**
+     * 先记用量日志，再执行这一次调用额外的监听器
+     */
+    private static List<ChatModelListener> listeners(ChatModelOptions options) {
+        List<ChatModelListener> listeners = new ArrayList<>();
+        listeners.add(new UsageLoggingListener(options.purpose()));
+        listeners.addAll(options.listeners());
+        return listeners;
     }
 
     private static Map<String, Object> thinkingParameter(boolean thinking) {

@@ -28,6 +28,11 @@ public interface CompanionConversationService extends IService<CompanionConversa
     CompanionConversation startNew(CompanionSession session);
 
     /**
+     * 当前对话被删掉了：换成本题最近活跃的另一段，没有就开一段新的
+     */
+    CompanionConversation activateLatest(CompanionSession session);
+
+    /**
      * 把某段对话设为当前；原来的当前对话如果没有任何消息就删掉
      */
     void activate(CompanionSession session, CompanionConversation conversation);

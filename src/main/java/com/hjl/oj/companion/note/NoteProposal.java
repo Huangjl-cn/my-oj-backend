@@ -13,6 +13,7 @@ import java.util.List;
  * 鸭鸭提议的一篇笔记：新建一篇，或修改用户已有的一篇。只是提议，用户预览后点「应用」才写进笔记。
  */
 @Data
+@Schema(description = "鸭鸭提议的一篇笔记：新建一篇，或修改已有的一篇")
 public class NoteProposal implements Serializable {
 
     public static final String KIND_CREATE = "create";

@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.guardrail.config.OutputGuardrailsConfig;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolArgumentsErrorHandler;
 import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
@@ -61,9 +62,17 @@ public class CompanionAssistantFactory {
     }
 
     public CompanionChatAssistant chatAssistant(AiCredential credential, ChatMemory memory, List<Object> tools) {
+        return chatAssistant(credential, memory, tools, null);
+    }
+
+    /**
+     * @param trace 这一轮的轨迹记录器（挂在模型上，收每次模型调用），不记录时为 null；下同
+     */
+    public CompanionChatAssistant chatAssistant(AiCredential credential, ChatMemory memory, List<Object> tools,
+                                                ChatModelListener trace) {
         return AiServices.builder(CompanionChatAssistant.class)
                 .streamingChatModel(chatModelProvider.streamingChatModel(
-                        options(credential, CompanionPurpose.CHAT, false, false)))
+                        options(credential, CompanionPurpose.CHAT, false, false, trace)))
                 .chatMemory(memory)
                 .tools(tools)
                 .maxSequentialToolsInvocations(MAX_SEQUENTIAL_TOOL_CALLS)
@@ -76,37 +85,57 @@ public class CompanionAssistantFactory {
     }
 
     public CompanionSolutionAssistant solutionAssistant(AiCredential credential, ChatMemory memory) {
+        return solutionAssistant(credential, memory, null);
+    }
+
+    public CompanionSolutionAssistant solutionAssistant(AiCredential credential, ChatMemory memory,
+                                                        ChatModelListener trace) {
         return AiServices.builder(CompanionSolutionAssistant.class)
                 .streamingChatModel(chatModelProvider.streamingChatModel(
-                        options(credential, CompanionPurpose.SOLUTION, true, false)))
+                        options(credential, CompanionPurpose.SOLUTION, true, false, trace)))
                 .chatMemory(memory)
                 .build();
     }
 
     public CompanionHintAssistant hintAssistant(AiCredential credential) {
+        return hintAssistant(credential, null);
+    }
+
+    public CompanionHintAssistant hintAssistant(AiCredential credential, ChatModelListener trace) {
         return AiServices.builder(CompanionHintAssistant.class)
-                .chatModel(chatModelProvider.chatModel(options(credential, CompanionPurpose.HINT, false, true)))
+                .chatModel(chatModelProvider.chatModel(options(credential, CompanionPurpose.HINT, false, true, trace)))
                 .outputGuardrails(new HintAnswerGuardrail())
                 .outputGuardrailsConfig(OutputGuardrailsConfig.builder().maxRetries(GUARDRAIL_MAX_ATTEMPTS).build())
                 .build();
     }
 
     public CompanionReactionAssistant reactionAssistant(AiCredential credential) {
+        return reactionAssistant(credential, null);
+    }
+
+    public CompanionReactionAssistant reactionAssistant(AiCredential credential, ChatModelListener trace) {
         return AiServices.builder(CompanionReactionAssistant.class)
-                .chatModel(chatModelProvider.chatModel(options(credential, CompanionPurpose.REACTION, false, true)))
+                .chatModel(chatModelProvider.chatModel(
+                        options(credential, CompanionPurpose.REACTION, false, true, trace)))
                 .outputGuardrails(new ReactionAnswerGuardrail())
                 .outputGuardrailsConfig(OutputGuardrailsConfig.builder().maxRetries(GUARDRAIL_MAX_ATTEMPTS).build())
                 .build();
     }
 
     public CompanionCompactionAssistant compactionAssistant(AiCredential credential) {
+        return compactionAssistant(credential, null);
+    }
+
+    public CompanionCompactionAssistant compactionAssistant(AiCredential credential, ChatModelListener trace) {
         return AiServices.builder(CompanionCompactionAssistant.class)
-                .chatModel(chatModelProvider.chatModel(options(credential, CompanionPurpose.COMPACTION, false, false)))
+                .chatModel(chatModelProvider.chatModel(
+                        options(credential, CompanionPurpose.COMPACTION, false, false, trace)))
                 .build();
     }
 
     private static ChatModelOptions options(AiCredential credential, String purpose, boolean thinking,
-                                            boolean jsonOutput) {
-        return new ChatModelOptions(credential.apiKey(), credential.modelName(), purpose, thinking, jsonOutput);
+                                            boolean jsonOutput, ChatModelListener trace) {
+        return new ChatModelOptions(credential.apiKey(), credential.modelName(), purpose, thinking, jsonOutput,
+                trace == null ? List.of() : List.of(trace));
     }
 }

@@ -2,6 +2,7 @@ package com.hjl.oj.service;
 
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.dto.companion.CompanionCompactRequest;
+import com.hjl.oj.model.dto.companion.CompanionDeleteConversationRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionNewConversationRequest;
@@ -46,6 +47,12 @@ public interface CompanionService {
      * 切换到之前的对话，返回切换后的会话
      */
     CompanionSessionVO switchConversation(User loginUser, CompanionSwitchConversationRequest request);
+
+    /**
+     * 删除一段对话（物理删除：消息、记忆、轨迹一起删）。删的是当前对话时换成最近的另一段，没有就开一段新的；
+     * 鸭鸭正在回答时不能删。返回删完后的会话
+     */
+    CompanionSessionVO deleteConversation(User loginUser, CompanionDeleteConversationRequest request);
 
     /**
      * 判题结束后的反应，记在当前对话里。同一次提交重复调用返回第一次的结果；没配 Key 或模型调用失败时返回兜底话术

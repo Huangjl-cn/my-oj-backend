@@ -7,6 +7,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
@@ -17,7 +18,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import java.util.List;
 
 /**
- * 模拟模型：不访问网络，回复内容和要发起的工具调用都来自 MockReplyGenerator。
+ * 模拟模型：不访问网络，回复内容和要发起的工具调用都来自 MockReplyGenerator。监听器照常收到请求和回复（轨迹在模拟模式下也能看）。
  */
 public class MockChatModelProvider implements ChatModelProvider {
 
@@ -34,6 +35,11 @@ public class MockChatModelProvider implements ChatModelProvider {
     @Override
     public ChatModel chatModel(ChatModelOptions options) {
         return new ChatModel() {
+            @Override
+            public List<ChatModelListener> listeners() {
+                return options.listeners();
+            }
+
             @Override
             public ChatResponse doChat(ChatRequest chatRequest) {
                 List<ToolExecutionRequest> toolCalls = replyGenerator.toolCalls(options, chatRequest);
@@ -53,6 +59,11 @@ public class MockChatModelProvider implements ChatModelProvider {
     @Override
     public StreamingChatModel streamingChatModel(ChatModelOptions options) {
         return new StreamingChatModel() {
+            @Override
+            public List<ChatModelListener> listeners() {
+                return options.listeners();
+            }
+
             @Override
             public void doChat(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
                 try {
