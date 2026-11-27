@@ -15,6 +15,10 @@ import com.hjl.oj.model.vo.NoteVO;
  */
 public interface NoteService extends IService<Note> {
 
+    int MAX_TITLE_LENGTH = 80;
+
+    int MAX_CONTENT_LENGTH = 100_000;
+
     NoteVO addNote(NoteAddRequest request, User loginUser);
 
     /**

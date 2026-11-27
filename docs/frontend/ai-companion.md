@@ -102,6 +102,7 @@ Accept: text/event-stream, application/json
 | `thinking` | `{text}` | 思考过程片段，只有看答案时有；可以显示"思考中"动画或折叠展示 |
 | `delta` | `{text}` | 回答正文片段，依次拼接 |
 | `edits` | 代码修改建议，见下文 | 回答里提出了修改时才有，在 `done` 之前 |
+| `notes` | 笔记提议（`NoteProposal` 数组），见「笔记」一节 | 只有聊天时，提议了新建或修改笔记才有，在 `done` 之前 |
 | `done` | `{messageId, hintLevel, contextUsage, compacted}` | 结束；`compacted` 为 true 表示这次回答前自动整理过记忆 |
 | `error` | `{code, message}` | 出错，之后流结束 |
 
@@ -142,6 +143,50 @@ Accept: text/event-stream, application/json
    - 一致：用 `executeEdits` 把整段替换为 `resultCode`（进入撤销栈，Ctrl+Z 可以撤销）。
    - 不一致：说明用户在模型思考期间改过代码。逐处在当前代码里查找 `oldText`（唯一时替换为 `newText`），找不到的提示用户重新问一次。`kind` 为 `rewrite` 时是整体替换，直接提示用户确认是否覆盖。
 3. 应用与否不需要通知后端：下一次请求带上的代码就反映了结果。
+
+### 笔记
+
+聊天时鸭鸭可以查看用户的笔记（本题的、按关键词搜全部的、读某一篇），也可以提议新建或修改。提议不会直接写进笔记：随回答一起推送（`notes` 事件），也保存在消息的 `noteEdits` 里，用户预览后点「应用」才写入。
+
+```json
+{
+  "kind": "update",
+  "noteId": "...",
+  "baseVersion": 3,
+  "title": "应用后的标题",
+  "previousTitle": "修改前的标题",
+  "questionId": "...",
+  "questionTitle": "两数之和",
+  "changes": [{ "kind": "replace", "oldText": "...", "newText": "...", "reason": "..." }],
+  "content": "提议时算好的全文",
+  "reason": "一句话说明",
+  "applied": false
+}
+```
+
+- `kind` 为 `create` 时是新建：没有 `noteId`（应用后填上）、`baseVersion` 和 `changes`，`questionId` 为空表示自由笔记。
+- `changes[].kind`：`replace` 替换一段原文、`append` 追加到末尾、`rewrite` 整篇改写。
+
+预览和应用（下标 `index` 是这条提议在 `noteEdits` 里的位置）：
+
+```http
+GET  /api/companion/note/preview?messageId=...&index=0
+POST /api/companion/note/apply   { "messageId": "...", "index": 0, "overwrite": false }
+```
+
+预览按笔记现在的内容算出应用后的样子，返回 `{status, proposal, title, content, currentContent, skipped, noteId}`。笔记在提议之后又被改过时（版本号对不上），后端按 `changes` 在新内容上重新应用：
+
+| status | 含义 | 应用 |
+|---|---|---|
+| `ready` | 可以直接应用 | 直接应用 |
+| `rebased` | 笔记在这之后改过，修改都重新对上了 | 直接应用 |
+| `partial` | 有 `skipped` 处原文对不上了 | 跳过对不上的，应用其余的 |
+| `overwrite` | 笔记在这之后改过，而提议要整篇改写 | 要用户确认，带 `overwrite: true` |
+| `stale` | 修改都对不上了 | 不能应用（40900），让鸭鸭重新改 |
+| `missing` | 笔记已经删了 | 不能应用（40400） |
+| `applied` | 已经应用过 | 重复应用直接返回那篇笔记，不会再建一篇 |
+
+应用返回 `{note, proposal, skipped}`：`note` 是写好的笔记（`NoteVO`），`proposal` 已标记 `applied`。还没到「看答案」档位时，后端会拒绝把解法代码写进提议（照抄用户自己的代码不算）。
 
 ## 七、记忆与上下文占用
 

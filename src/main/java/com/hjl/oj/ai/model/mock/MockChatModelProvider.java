@@ -2,6 +2,7 @@ package com.hjl.oj.ai.model.mock;
 
 import com.hjl.oj.ai.model.ChatModelOptions;
 import com.hjl.oj.ai.model.ChatModelProvider;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.model.chat.ChatModel;
@@ -13,8 +14,10 @@ import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.output.TokenUsage;
 
+import java.util.List;
+
 /**
- * 模拟模型：不访问网络，回复内容来自 MockReplyGenerator。不会发起工具调用。
+ * 模拟模型：不访问网络，回复内容和要发起的工具调用都来自 MockReplyGenerator。
  */
 public class MockChatModelProvider implements ChatModelProvider {
 
@@ -33,6 +36,10 @@ public class MockChatModelProvider implements ChatModelProvider {
         return new ChatModel() {
             @Override
             public ChatResponse doChat(ChatRequest chatRequest) {
+                List<ToolExecutionRequest> toolCalls = replyGenerator.toolCalls(options, chatRequest);
+                if (!toolCalls.isEmpty()) {
+                    return response(AiMessage.from(toolCalls), chatRequest);
+                }
                 String reply = replyGenerator.reply(options, chatRequest);
                 AiMessage.Builder message = AiMessage.builder().text(reply);
                 if (options.thinking()) {
@@ -49,6 +56,11 @@ public class MockChatModelProvider implements ChatModelProvider {
             @Override
             public void doChat(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
                 try {
+                    List<ToolExecutionRequest> toolCalls = replyGenerator.toolCalls(options, chatRequest);
+                    if (!toolCalls.isEmpty()) {
+                        handler.onCompleteResponse(response(AiMessage.from(toolCalls), chatRequest));
+                        return;
+                    }
                     AiMessage.Builder message = AiMessage.builder();
                     if (options.thinking()) {
                         String thinking = replyGenerator.thinking(options, chatRequest);
@@ -75,7 +87,7 @@ public class MockChatModelProvider implements ChatModelProvider {
                 .aiMessage(message)
                 .modelName(MOCK_MODEL_NAME)
                 .tokenUsage(new TokenUsage(inputTokens, outputTokens))
-                .finishReason(FinishReason.STOP)
+                .finishReason(message.hasToolExecutionRequests() ? FinishReason.TOOL_EXECUTION : FinishReason.STOP)
                 .build();
     }
 }

@@ -141,6 +141,7 @@ create table if not exists companion_message
     content        mediumtext                         not null comment '消息内容',
     quote          text                               null comment '用户提问时引用的代码（json）',
     codeEdits      mediumtext                         null comment '代码修改建议（json）',
+    noteEdits      mediumtext                         null comment '笔记的新建、修改提议（json）',
     createTime     datetime default CURRENT_TIMESTAMP not null comment '创建时间',
     index idx_user_question_id (userId, questionId, id),
     index idx_conversation_id (conversationId, id),

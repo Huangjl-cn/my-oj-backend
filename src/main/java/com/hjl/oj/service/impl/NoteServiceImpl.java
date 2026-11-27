@@ -39,10 +39,6 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements No
 
     static final String UNTITLED = "未命名笔记";
 
-    static final int MAX_TITLE_LENGTH = 80;
-
-    static final int MAX_CONTENT_LENGTH = 100_000;
-
     static final int MAX_NOTES_PER_USER = 2000;
 
     static final int MAX_PAGE_SIZE = 50;

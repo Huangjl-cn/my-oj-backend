@@ -7,6 +7,7 @@ import com.hjl.oj.model.dto.companion.CompanionCompactRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionNewConversationRequest;
+import com.hjl.oj.model.dto.companion.CompanionNoteApplyRequest;
 import com.hjl.oj.model.dto.companion.CompanionReactRequest;
 import com.hjl.oj.model.dto.companion.CompanionSolutionRequest;
 import com.hjl.oj.model.dto.companion.CompanionSwitchConversationRequest;
@@ -15,8 +16,11 @@ import com.hjl.oj.model.vo.CompanionConversationVO;
 import com.hjl.oj.model.vo.CompanionHintStateVO;
 import com.hjl.oj.model.vo.CompanionHintVO;
 import com.hjl.oj.model.vo.CompanionMessageVO;
+import com.hjl.oj.model.vo.CompanionNoteApplyVO;
+import com.hjl.oj.model.vo.CompanionNotePreviewVO;
 import com.hjl.oj.model.vo.CompanionReactionVO;
 import com.hjl.oj.model.vo.CompanionSessionVO;
+import com.hjl.oj.service.CompanionNoteService;
 import com.hjl.oj.service.CompanionService;
 import com.hjl.oj.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -43,6 +47,9 @@ public class CompanionController {
 
     @Resource
     private CompanionService companionService;
+
+    @Resource
+    private CompanionNoteService companionNoteService;
 
     @Resource
     private UserService userService;
@@ -113,6 +120,20 @@ public class CompanionController {
     public BaseResponse<CompanionHintStateVO> setLevel(@RequestBody CompanionLevelRequest levelRequest,
                                                        HttpServletRequest request) {
         return ResultUtils.success(companionService.setLevel(userService.getLoginUser(request), levelRequest));
+    }
+
+    @Operation(summary = "预览鸭鸭的一条笔记提议：按笔记现在的内容算出应用后的样子")
+    @GetMapping("/note/preview")
+    public BaseResponse<CompanionNotePreviewVO> previewNoteEdit(@RequestParam long messageId, @RequestParam int index,
+                                                                HttpServletRequest request) {
+        return ResultUtils.success(companionNoteService.preview(userService.getLoginUser(request), messageId, index));
+    }
+
+    @Operation(summary = "应用鸭鸭的一条笔记提议：新建或修改笔记，并标记为已应用")
+    @PostMapping("/note/apply")
+    public BaseResponse<CompanionNoteApplyVO> applyNoteEdit(@RequestBody CompanionNoteApplyRequest applyRequest,
+                                                            HttpServletRequest request) {
+        return ResultUtils.success(companionNoteService.apply(userService.getLoginUser(request), applyRequest));
     }
 
     @Operation(summary = "手动整理记忆")

@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *     <li>{@code thinking}：思考过程片段（只有看答案时有）</li>
  *     <li>{@code delta}：回答正文片段</li>
  *     <li>{@code edits}：代码修改建议（CodeEditProposal）</li>
+ *     <li>{@code notes}：笔记的新建、修改提议（NoteProposal 列表）</li>
  *     <li>{@code done}：结束，带消息 id、上下文占用和提示状态</li>
  *     <li>{@code error}：出错，带错误码和说明</li>
  * </ul>
@@ -24,6 +25,8 @@ public class CompanionSse {
     public static final String EVENT_DELTA = "delta";
 
     public static final String EVENT_EDITS = "edits";
+
+    public static final String EVENT_NOTES = "notes";
 
     public static final String EVENT_DONE = "done";
 

@@ -24,11 +24,14 @@ import com.hjl.oj.companion.memory.ConversationMemoryId;
 import com.hjl.oj.companion.memory.MemoryCompactor;
 import com.hjl.oj.companion.memory.MemoryTranscript;
 import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
+import com.hjl.oj.companion.note.NoteEditSession;
+import com.hjl.oj.companion.note.NoteProposal;
 import com.hjl.oj.companion.prompt.CompanionPrompts;
 import com.hjl.oj.companion.reaction.FallbackReactions;
 import com.hjl.oj.companion.stream.CompanionSse;
 import com.hjl.oj.companion.tool.CodeEditTools;
 import com.hjl.oj.companion.tool.CodeRewriteTools;
+import com.hjl.oj.companion.tool.NoteTools;
 import com.hjl.oj.companion.tool.SubmissionHistoryTools;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.model.dto.companion.CodeQuote;
@@ -67,6 +70,7 @@ import com.hjl.oj.service.CompanionConversationService;
 import com.hjl.oj.service.CompanionMessageService;
 import com.hjl.oj.service.CompanionService;
 import com.hjl.oj.service.CompanionSessionService;
+import com.hjl.oj.service.NoteService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import dev.langchain4j.data.message.AiMessage;
@@ -158,13 +162,15 @@ public class CompanionServiceImpl implements CompanionService {
 
     private final AiProperties aiProperties;
 
+    private final NoteService noteService;
+
     public CompanionServiceImpl(QuestionService questionService, QuestionSubmitService questionSubmitService,
                                 AiSettingService aiSettingService, CompanionSessionService companionSessionService,
                                 CompanionConversationService companionConversationService,
                                 CompanionMessageService companionMessageService,
                                 CompanionAssistantFactory assistantFactory, CompanionPrompts companionPrompts,
                                 MemoryCompactor memoryCompactor, MysqlChatMemoryStore chatMemoryStore,
-                                AiCallGuard aiCallGuard, AiProperties aiProperties) {
+                                AiCallGuard aiCallGuard, AiProperties aiProperties, NoteService noteService) {
         this.questionService = questionService;
         this.questionSubmitService = questionSubmitService;
         this.aiSettingService = aiSettingService;
@@ -177,6 +183,7 @@ public class CompanionServiceImpl implements CompanionService {
         this.chatMemoryStore = chatMemoryStore;
         this.aiCallGuard = aiCallGuard;
         this.aiProperties = aiProperties;
+        this.noteService = noteService;
     }
 
     // region 会话与对话
@@ -380,6 +387,10 @@ public class CompanionServiceImpl implements CompanionService {
             if (state.editPermission() == EditPermission.UNRESTRICTED) {
                 tools.add(new CodeRewriteTools(editSession));
             }
+            NoteEditSession noteSession = new NoteEditSession(loginUser, target.questionId(),
+                    target.question().getTitle(), state.effectiveLevel(), snapshot.getCode(), noteService);
+            tools.add(new NoteTools(loginUser, target.questionId(), noteService, noteSession,
+                    aiProperties.getCompanion().getMaxToolResultChars()));
             String userText = request.getMessage().strip();
             String userPrompt = companionPrompts.chatMessage(state, snapshot, recentEvents(target), quote, userText);
             companionMessageService.saveUserMessage(target.conversation(), CompanionMessageTypeEnum.CHAT, userText, quote);
@@ -388,7 +399,7 @@ public class CompanionServiceImpl implements CompanionService {
             TokenStream stream = assistantFactory
                     .chatAssistant(credential, assistantFactory.conversationMemory(target.memoryId()), tools)
                     .chat(systemPrompt, userPrompt);
-            return streamAnswer(stream, permit, target, state, editSession, CompanionMessageTypeEnum.CHAT,
+            return streamAnswer(stream, permit, target, state, editSession, noteSession, CompanionMessageTypeEnum.CHAT,
                     compacted, Function.identity());
         } catch (RuntimeException e) {
             permit.close();
@@ -527,7 +538,7 @@ public class CompanionServiceImpl implements CompanionService {
                 }
                 return answer;
             };
-            return streamAnswer(stream, permit, target, state, editSession, CompanionMessageTypeEnum.SOLUTION,
+            return streamAnswer(stream, permit, target, state, editSession, null, CompanionMessageTypeEnum.SOLUTION,
                     compacted, extractCode);
         } catch (RuntimeException e) {
             permit.close();
@@ -618,13 +629,15 @@ public class CompanionServiceImpl implements CompanionService {
     // region 流式回答
 
     /**
-     * 把 TokenStream 接到 SSE：正文和思考逐段推送，结束时落库、推送修改建议和 done，并更新上下文占用。
+     * 把 TokenStream 接到 SSE：正文和思考逐段推送，结束时落库、推送修改建议、笔记提议和 done，并更新上下文占用。
      *
+     * @param noteSession  这一轮的笔记提议，没有笔记工具时为空
      * @param finishAnswer 结束时对完整回答的处理（参考解法用它提取代码），返回要保存的正文
      */
     private SseEmitter streamAnswer(TokenStream stream, AiCallGuard.Permit permit, Target target,
-                                    HintState state, CodeEditSession editSession, CompanionMessageTypeEnum type,
-                                    boolean compacted, Function<String, String> finishAnswer) {
+                                    HintState state, CodeEditSession editSession, NoteEditSession noteSession,
+                                    CompanionMessageTypeEnum type, boolean compacted,
+                                    Function<String, String> finishAnswer) {
         CompanionSse sse = new CompanionSse(STREAM_TIMEOUT_MILLIS);
         sse.onFinish(permit::close);
         StringBuilder answer = new StringBuilder();
@@ -646,15 +659,19 @@ public class CompanionServiceImpl implements CompanionService {
                     try {
                         String content = finishAnswer.apply(answer.isEmpty() ? textOf(response) : answer.toString());
                         CodeEditProposal proposal = editSession.proposal().orElse(null);
+                        List<NoteProposal> notes = noteSession == null ? List.of() : noteSession.proposals();
                         CompanionMessage message = assistantMessage(target, type, state.track());
                         message.setHintLevel(type == CompanionMessageTypeEnum.SOLUTION ? HintLadder.SOLUTION_LEVEL : null);
                         message.setContent(StringUtils.defaultIfBlank(content, "（没有回答内容）"));
-                        companionMessageService.saveMessage(message, proposal);
+                        companionMessageService.saveMessage(message, proposal, notes);
 
                         int contextTokens = lastCallContextTokens(response, intermediateInput.get(), intermediateOutput.get());
                         companionConversationService.updateContextTokens(target.conversation().getId(), contextTokens);
                         if (proposal != null) {
                             sse.send(CompanionSse.EVENT_EDITS, proposal);
+                        }
+                        if (!notes.isEmpty()) {
+                            sse.send(CompanionSse.EVENT_NOTES, notes);
                         }
                         CompanionStreamDoneVO done = new CompanionStreamDoneVO();
                         done.setMessageId(message.getId());

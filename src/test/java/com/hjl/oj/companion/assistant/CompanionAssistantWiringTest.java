@@ -4,9 +4,15 @@ import com.hjl.oj.ai.key.AiCredential;
 import com.hjl.oj.ai.model.mock.MockChatModelProvider;
 import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
 import com.hjl.oj.companion.mock.CompanionMockReplies;
+import com.hjl.oj.companion.note.NoteEditSession;
+import com.hjl.oj.companion.note.NoteProposal;
+import com.hjl.oj.companion.tool.NoteTools;
+import com.hjl.oj.model.entity.User;
+import com.hjl.oj.service.NoteService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -91,6 +97,58 @@ class CompanionAssistantWiringTest {
         assertEquals(SYSTEM_WITH_BRACES, ((SystemMessage) messages.get(0)).text());
         assertEquals(USER_WITH_BRACES, ((UserMessage) messages.get(1)).singleText());
         assertInstanceOf(AiMessage.class, messages.get(2));
+    }
+
+    @Test
+    void mockChatCallsTheNoteToolAndAnswersAfterIt() throws Exception {
+        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(100);
+        NoteEditSession notes = new NoteEditSession(user(), 7L, "两数之和", 0, "", mock(NoteService.class));
+        NoteTools tools = new NoteTools(user(), 7L, mock(NoteService.class), notes, 4000);
+        StringBuilder streamed = new StringBuilder();
+        CompletableFuture<String> finished = new CompletableFuture<>();
+
+        factory.chatAssistant(credential, memory, List.of(tools))
+                .chat(SYSTEM_WITH_BRACES, "【场景】聊天\n\n【用户说】\n把这段对话整理成一篇笔记")
+                .onPartialResponse(streamed::append)
+                .onCompleteResponse(response -> finished.complete(response.aiMessage().text()))
+                .onError(finished::completeExceptionally)
+                .start();
+
+        assertTrue(finished.get(10, TimeUnit.SECONDS).contains("整理成了一篇笔记"));
+        assertTrue(streamed.toString().contains("整理成了一篇笔记"));
+        assertEquals(1, notes.proposals().size());
+        NoteProposal proposal = notes.proposals().get(0);
+        assertEquals(NoteProposal.KIND_CREATE, proposal.getKind());
+        assertEquals(7L, proposal.getQuestionId());
+        // 记忆里依次是：系统、用户、发起工具调用、工具结果、最后的回答
+        List<ChatMessage> messages = memory.messages();
+        assertTrue(((AiMessage) messages.get(2)).hasToolExecutionRequests());
+        assertInstanceOf(ToolExecutionResultMessage.class, messages.get(3));
+        assertInstanceOf(AiMessage.class, messages.get(4));
+    }
+
+    @Test
+    void mockChatWithoutNoteWordsDoesNotCallTools() throws Exception {
+        NoteEditSession notes = new NoteEditSession(user(), 7L, "两数之和", 0, "", mock(NoteService.class));
+        CompletableFuture<String> finished = new CompletableFuture<>();
+
+        factory.chatAssistant(credential, MessageWindowChatMemory.withMaxMessages(100),
+                        List.of(new NoteTools(user(), 7L, mock(NoteService.class), notes, 4000)))
+                .chat(SYSTEM_WITH_BRACES, USER_WITH_BRACES)
+                .onPartialResponse(ignored -> {
+                })
+                .onCompleteResponse(response -> finished.complete(response.aiMessage().text()))
+                .onError(finished::completeExceptionally)
+                .start();
+
+        assertTrue(finished.get(10, TimeUnit.SECONDS).contains("模拟模式"));
+        assertTrue(notes.proposals().isEmpty());
+    }
+
+    private static User user() {
+        User user = new User();
+        user.setId(1L);
+        return user;
     }
 
     @Test

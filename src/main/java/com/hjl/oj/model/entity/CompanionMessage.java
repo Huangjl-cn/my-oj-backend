@@ -65,5 +65,10 @@ public class CompanionMessage implements Serializable {
      */
     private String codeEdits;
 
+    /**
+     * 笔记的新建、修改提议（NoteProposal 列表的 JSON）
+     */
+    private String noteEdits;
+
     private Date createTime;
 }

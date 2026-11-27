@@ -15,6 +15,7 @@ import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
 import com.hjl.oj.companion.prompt.CompanionPrompts;
 import com.hjl.oj.companion.tool.CodeEditTools;
 import com.hjl.oj.companion.tool.CodeRewriteTools;
+import com.hjl.oj.companion.tool.NoteTools;
 import com.hjl.oj.companion.tool.SubmissionHistoryTools;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
@@ -42,6 +43,7 @@ import com.hjl.oj.service.AiSettingService;
 import com.hjl.oj.service.CompanionConversationService;
 import com.hjl.oj.service.CompanionMessageService;
 import com.hjl.oj.service.CompanionSessionService;
+import com.hjl.oj.service.NoteService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import dev.langchain4j.data.message.AiMessage;
@@ -118,7 +120,7 @@ class CompanionServiceImplTest {
         properties.getCompanion().setPersonaName("鸭鸭");
         service = new CompanionServiceImpl(questionService, questionSubmitService, aiSettingService, sessionService,
                 conversationService, messageService, assistantFactory, prompts, mock(MemoryCompactor.class), memoryStore,
-                aiCallGuard, properties);
+                aiCallGuard, properties, mock(NoteService.class));
         user = new User();
         user.setId(USER_ID);
         Question question = new Question();
@@ -288,6 +290,7 @@ class CompanionServiceImplTest {
         assertTrue(guided.stream().anyMatch(CodeEditTools.class::isInstance));
         assertFalse(guided.stream().anyMatch(CodeRewriteTools.class::isInstance));
         assertTrue(direct.stream().anyMatch(CodeRewriteTools.class::isInstance));
+        assertTrue(guided.stream().anyMatch(NoteTools.class::isInstance));
         // 流式回答收尾：陪练的回答落库、上下文占用更新
         verify(conversationService, times(2)).updateContextTokens(eq(CONVERSATION_ID), eq(1500));
     }

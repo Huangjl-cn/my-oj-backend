@@ -75,8 +75,8 @@ public class CompanionPrompts {
      */
     public String chatMessage(HintState state, CodeSnapshot snapshot, String recentEvents, CodeQuote quote,
                               String userText) {
-        String rewriteNote = state.editPermission() == EditPermission.UNRESTRICTED ? "，需要整体替换时调用 rewriteCode" : "";
-        return join(chatScene.apply(Map.<String, Object>of("rewriteNote", rewriteNote)).text(),
+        String rewriteTool = state.editPermission() == EditPermission.UNRESTRICTED ? "，需要整体替换时调用 rewriteCode" : "";
+        return join(chatScene.apply(Map.<String, Object>of("rewriteTool", rewriteTool)).text(),
                 state.describe(),
                 recentEvents,
                 renderCode(snapshot),
