@@ -2,6 +2,7 @@ package com.hjl.oj.model.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -23,6 +24,10 @@ public class NoteSummaryVO implements Serializable {
 
     @Schema(description = "正文开头的纯文字摘要（去掉了 Markdown 符号）")
     private String snippet;
+
+    @Schema(description = "正文开头一段（Markdown，最多约 600 字），卡片墙上渲染着看")
+    @ToString.Exclude
+    private String excerpt;
 
     private Long questionId;
 

@@ -1,14 +1,19 @@
 package com.hjl.oj.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hjl.oj.common.ErrorCode;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.model.dto.note.NoteAddRequest;
+import com.hjl.oj.model.dto.note.NoteQueryRequest;
 import com.hjl.oj.model.dto.note.NoteUpdateRequest;
 import com.hjl.oj.model.entity.Note;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.vo.NoteOverviewVO;
+import com.hjl.oj.model.vo.NoteTagVO;
 import com.hjl.oj.service.QuestionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -27,6 +33,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -144,6 +151,52 @@ class NoteServiceImplTest {
         assertTrue(where.contains("version") && where.contains("userId"), where);
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue(3));
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("未命名笔记"));
+    }
+
+    @Test
+    void overviewCountsLinkedFreeAndTags() {
+        doReturn(List.of(
+                Map.of("noteCount", 3L),
+                Map.of("questionId", 5L, "noteCount", 2L),
+                Map.of("questionId", 6L, "noteCount", 1L))).when(service).listMaps(any(Wrapper.class));
+        Question five = question(5L, "爬楼梯");
+        five.setTags("[\"easy\",\"动态规划\"]");
+        Question six = question(6L, "打家劫舍");
+        six.setTags("[\"medium\",\"动态规划\",\"数组\"]");
+        when(questionService.list(any(Wrapper.class))).thenReturn(List.of(five, six));
+
+        NoteOverviewVO overview = service.getMyOverview(me);
+
+        assertEquals(6, overview.getTotal());
+        assertEquals(3, overview.getFree());
+        assertEquals(3, overview.getLinked());
+        // 难度标签不算；动态规划下 2 + 1 篇
+        assertEquals(List.of(new NoteTagVO("动态规划", 3), new NoteTagVO("数组", 1)), overview.getTags());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void notesCanBeFilteredByLinkedAndTag() {
+        doReturn(new Page<Note>(1, 20, 0)).when(service).page(any(), any(Wrapper.class));
+        NoteQueryRequest request = new NoteQueryRequest();
+        request.setCurrent(1);
+        request.setPageSize(20);
+        request.setLinked(true);
+        request.setTag(" 动态规划 ");
+
+        service.listMyNotes(request, me);
+
+        ArgumentCaptor<QueryWrapper<Note>> captor = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(service).page(any(), captor.capture());
+        String where = captor.getValue().getSqlSegment();
+        assertTrue(where.contains("questionId IS NOT NULL") && where.contains("tags LIKE"), where);
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("%\"动态规划\"%"));
+
+        request.setLinked(false);
+        request.setTag(null);
+        service.listMyNotes(request, me);
+        verify(service, times(2)).page(any(), captor.capture());
+        assertTrue(captor.getValue().getSqlSegment().contains("questionId IS NULL"));
     }
 
     @Test

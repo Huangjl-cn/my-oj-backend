@@ -43,7 +43,7 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 1. **全部提交视图** `list/page`：请求用独立的 `QuestionSubmitArchiveQueryRequest`（不继承 PageRequest，sortOrder 默认 descend；`my/list/page` 使用的 `QuestionSubmitQueryRequest` 保持不动）。`judgeResult` / `sortField` / `sortOrder` 走白名单校验（非法抛 PARAMS_ERROR）；判题结果语义的唯一来源是 `JudgeResultEnum`（含 SQL 片段常量和 `from(status, message)` 派生）。排序表达式（含 JSON_EXTRACT）通过 `wrapper.last("ORDER BY ...")` 整体拼接，缺失指标排在最后，同值按 createTime 倒序。响应平铺 questionTitle / questionTags / userName / userAvatar 和派生的 judgeResult，题目和用户摘要用批量 `listByIds` 预取（不要改回 N+1）。
 2. **按题聚合视图** `group/page`：XML 中的自定义 SQL `selectQuestionGroupPage` / `countQuestionGroup`（窗口函数 `ROW_NUMBER` + `MIN(...) OVER`）；total 是题目数（`setSearchCount(false)` + 显式 count）；bestTime / bestMemory 分别独立取最小值（可能来自不同提交），统计范围随 `judgeResult` 等筛选变化，没有有效指标的行自动排除，null 排在最后。
 3. **指标击败率** `rank`：对比人群是同题、同语言、仅 Accepted（复用 `JudgeResultEnum.ACCEPTED.getSqlFragment()`）、含本人；"超过"按指标 `>=` 本次提交计（持平计入，首次通过为 1/1 = 100%）。只返回 Total / Beaten 计数，比例由前端计算。
-4. **学习统计** `progress/stats`（`getMyLearningStats`）：各标签的题目数 / 已通过 / 做过没通过（`QuestionStats.buildTagProgress`，难度标签不算）、各语言的提交次数和通过题数、最近第一次通过的 10 道题和一次通过的题数。「第一次通过是第几次提交」用两层 `ROW_NUMBER` 在 `selectUserFirstAccepted` 里一次算出；题目（id、title、tags）只查一次。按难度的进度（`progress/my`）和做题日历（`progress/calendar`）是另外的接口，不重复返回。
+4. **学习统计** `progress/stats`（`getMyLearningStats`）：各标签的题目数 / 已通过 / 做过没通过（`QuestionStats.buildTagProgress`，难度标签不算）、各语言的提交次数和通过题数、最近第一次通过的 10 道题、一次通过的题数和最近 6 道、最近一年一天里各小时的提交次数（`selectUserHourCounts`）、判完的提交按结果分的次数（`selectUserVerdictCounts` 按「状态 + 消息第一行」分组，再用 `VerdictClassifier` 归类，中英文写法都认）、最常卡住的标签（`QuestionStats.buildTagAttempts`：已通过的题平均第几次才过，通过不到 2 道的标签不算）。「第一次通过是第几次提交」用两层 `ROW_NUMBER` 在 `selectUserFirstAccepted` 里一次算出；题目（id、title、tags）只查一次。按难度的进度（`progress/my`）和做题日历（`progress/calendar`）是另外的接口，不重复返回。
 5. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
 
 ### 题单和收藏（`QuestionListServiceImpl`，接口 `/question_list/*`）
@@ -58,7 +58,7 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 
 - 表 `note`：`questionId` 可空（自由笔记），一道题可以有多篇；只有作者能看能改，别人的当作不存在（NOT_FOUND）。
 - 保存带版本号：`UpdateWrapper` 条件里带 `version`，`setSql("version = version + 1")`；没更新到时再查一次，区分「不存在」和「在别处改过了」（`ErrorCode.CONFLICT_ERROR` 40900）。
-- 列表按 `updateTime` 倒序，只取 `LEFT(content, 400)` 交给 `NoteSnippets.plain` 做摘要；关键词在标题和正文里 LIKE，`escapeLike` 让 `%`、`_` 按普通字符找。
+- 列表按 `updateTime` 倒序，只取 `LEFT(content, 800)`：`NoteSnippets.plain` 做纯文字摘要，`NoteSnippets.excerpt` 做卡片墙用的 Markdown 片段（约 600 字，整行截断，截进代码块就补上结尾）。关键词在标题和正文里 LIKE，`escapeLike` 让 `%`、`_` 按普通字符找；`linked` 只看挂题的 / 自由的，`tag` 按挂的题的标签筛（`tags LIKE '%"标签"%'`，参数绑定）。`/note/overview` 给总数、挂题和自由的篇数、笔记最多的标签。
 - 自由笔记没有题目：取题目信息用 `questionOf`（`Map.of()` 不能用 null 查）。
 - 限制：每人 2000 篇，标题 80 字，正文 10 万字；挂题时默认标题「题目名 笔记」，否则「未命名笔记」。
 

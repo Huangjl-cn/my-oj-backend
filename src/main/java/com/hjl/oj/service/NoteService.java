@@ -7,6 +7,7 @@ import com.hjl.oj.model.dto.note.NoteQueryRequest;
 import com.hjl.oj.model.dto.note.NoteUpdateRequest;
 import com.hjl.oj.model.entity.Note;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.vo.NoteOverviewVO;
 import com.hjl.oj.model.vo.NoteSummaryVO;
 import com.hjl.oj.model.vo.NoteVO;
 
@@ -34,4 +35,9 @@ public interface NoteService extends IService<Note> {
      * 我的笔记，按最近修改排；keyword 在标题和正文里找
      */
     Page<NoteSummaryVO> listMyNotes(NoteQueryRequest request, User loginUser);
+
+    /**
+     * 我的笔记总览：一共几篇、挂题的和自由的各几篇、笔记最多的几个标签
+     */
+    NoteOverviewVO getMyOverview(User loginUser);
 }

@@ -14,6 +14,7 @@ import java.util.List;
  * 一道已通过的题，以及第一次通过时的情况
  */
 @Data
+@Schema(description = "一道通过了的题：第一次通过的时间、语言、第几次提交")
 @NoArgsConstructor
 @AllArgsConstructor
 public class SolvedQuestionVO implements Serializable {

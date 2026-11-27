@@ -29,7 +29,13 @@ public final class VerdictClassifier {
     }
 
     public static Verdict classify(QuestionSubmit submit) {
-        Integer status = submit.getStatus();
+        return classify(submit.getStatus(), message(submit));
+    }
+
+    /**
+     * @param message judgeInfo.message（整段或只有第一行都行）
+     */
+    public static Verdict classify(Integer status, String message) {
         if (QuestionSubmitStatusEnum.WAITING.getValue().equals(status)
                 || QuestionSubmitStatusEnum.RUNNING.getValue().equals(status)) {
             return Verdict.JUDGING;
@@ -37,7 +43,7 @@ public final class VerdictClassifier {
         if (QuestionSubmitStatusEnum.FAILED.getValue().equals(status)) {
             return Verdict.SYSTEM_ERROR;
         }
-        String firstLine = firstLine(message(submit)).toLowerCase(Locale.ROOT);
+        String firstLine = firstLine(message == null ? "" : message.strip()).toLowerCase(Locale.ROOT);
         if (firstLine.isEmpty()) {
             return Verdict.UNKNOWN;
         }

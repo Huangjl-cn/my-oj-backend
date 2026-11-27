@@ -23,4 +23,10 @@ public class NoteQueryRequest extends PageRequest implements Serializable {
 
     @Schema(description = "只看挂在这道题上的笔记")
     private Long questionId;
+
+    @Schema(description = "true 只看挂在题上的，false 只看自由笔记，不填都看")
+    private Boolean linked;
+
+    @Schema(description = "只看挂在带这个标签的题上的笔记")
+    private String tag;
 }

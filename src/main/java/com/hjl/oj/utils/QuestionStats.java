@@ -8,6 +8,7 @@ import com.hjl.oj.model.enums.QuestionDifficultyEnum;
 import com.hjl.oj.model.vo.DifficultyCountVO;
 import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionTagVO;
+import com.hjl.oj.model.vo.TagAttemptsVO;
 import com.hjl.oj.model.vo.TagProgressVO;
 import org.apache.commons.lang3.StringUtils;
 
@@ -141,6 +142,43 @@ public final class QuestionStats {
         counts.forEach((tag, count) -> tags.add(new TagProgressVO(tag, count[0], count[1], count[2])));
         tags.sort(Comparator.comparing(TagProgressVO::getTotal).reversed());
         return tags;
+    }
+
+    /**
+     * 各标签下已通过的题平均第几次提交才通过，难度标签不算；平均次数从多到少，取前 limit 个。
+     * 通过的题够 minSolved 道的标签才算，免得一两道题就排到最前；都不够时放宽到 1 道
+     *
+     * @param attemptsByQuestion 已通过的题 → 第几次提交才通过
+     */
+    public static List<TagAttemptsVO> buildTagAttempts(List<Question> questions, Map<Long, Integer> attemptsByQuestion,
+                                                       int minSolved, int limit) {
+        // 每个标签：[通过的题目数, 次数之和]
+        Map<String, int[]> sums = new LinkedHashMap<>();
+        for (Question question : questions) {
+            Integer attempts = attemptsByQuestion.get(question.getId());
+            if (attempts == null || attempts < 1) {
+                continue;
+            }
+            parseTags(question.getTags()).stream()
+                    .map(String::strip)
+                    .distinct()
+                    .filter(tag -> QuestionDifficultyEnum.fromTag(tag).isEmpty())
+                    .forEach(tag -> {
+                        int[] sum = sums.computeIfAbsent(tag, key -> new int[2]);
+                        sum[0]++;
+                        sum[1] += attempts;
+                    });
+        }
+        int threshold = sums.values().stream().anyMatch(sum -> sum[0] >= minSolved) ? minSolved : 1;
+        List<TagAttemptsVO> result = new ArrayList<>();
+        sums.forEach((tag, sum) -> {
+            if (sum[0] >= threshold) {
+                result.add(new TagAttemptsVO(tag, sum[0], Math.round(sum[1] * 10.0 / sum[0]) / 10.0));
+            }
+        });
+        result.sort(Comparator.comparing(TagAttemptsVO::getAverageAttempts).reversed()
+                .thenComparing(Comparator.comparing(TagAttemptsVO::getSolved).reversed()));
+        return result.size() > limit ? List.copyOf(result.subList(0, limit)) : result;
     }
 
     private static void count(DifficultyCountVO counter, Optional<QuestionDifficultyEnum> difficulty) {

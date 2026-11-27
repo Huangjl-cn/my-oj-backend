@@ -9,6 +9,7 @@ import com.hjl.oj.exception.ThrowUtils;
 import com.hjl.oj.model.dto.note.NoteAddRequest;
 import com.hjl.oj.model.dto.note.NoteQueryRequest;
 import com.hjl.oj.model.dto.note.NoteUpdateRequest;
+import com.hjl.oj.model.vo.NoteOverviewVO;
 import com.hjl.oj.model.vo.NoteSummaryVO;
 import com.hjl.oj.model.vo.NoteVO;
 import com.hjl.oj.service.NoteService;
@@ -69,5 +70,13 @@ public class NoteController {
     public BaseResponse<Page<NoteSummaryVO>> listMyNotes(@RequestBody NoteQueryRequest queryRequest,
                                                          HttpServletRequest request) {
         return ResultUtils.success(noteService.listMyNotes(queryRequest, userService.getLoginUser(request)));
+    }
+
+    /**
+     * 我的笔记总览：一共几篇、挂题的和自由的各几篇、笔记最多的几个标签
+     */
+    @GetMapping("/overview")
+    public BaseResponse<NoteOverviewVO> getMyNoteOverview(HttpServletRequest request) {
+        return ResultUtils.success(noteService.getMyOverview(userService.getLoginUser(request)));
     }
 }

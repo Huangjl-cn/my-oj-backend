@@ -137,4 +137,26 @@
         ORDER BY solvedTime DESC, questionId DESC
     </select>
 
+    <!-- 一天里各个小时的提交次数（看用户习惯什么时候做题） -->
+    <select id="selectUserHourCounts" resultType="com.hjl.oj.model.dto.questionsubmit.HourCountRow">
+        SELECT HOUR(createTime) AS hour, COUNT(*) AS submitCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND createTime &gt;= DATE_SUB(CURDATE(), INTERVAL #{days} - 1 DAY)
+        GROUP BY HOUR(createTime)
+    </select>
+
+    <!-- 判完的提交按「状态 + 判题消息第一行」分组；第一行就是结果（中英文写法都有），再由 VerdictClassifier 归类 -->
+    <select id="selectUserVerdictCounts" resultType="com.hjl.oj.model.dto.questionsubmit.VerdictCountRow">
+        SELECT status,
+               SUBSTRING_INDEX(TRIM(JSON_UNQUOTE(JSON_EXTRACT(judgeInfo, '$.message'))), '\n', 1) AS message,
+               COUNT(*) AS submitCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND status IN (2, 3)
+        GROUP BY status, message
+    </select>
+
 </mapper>

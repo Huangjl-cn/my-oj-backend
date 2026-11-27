@@ -5,6 +5,7 @@ import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.enums.QuestionDifficultyEnum;
 import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionTagVO;
+import com.hjl.oj.model.vo.TagAttemptsVO;
 import com.hjl.oj.model.vo.TagProgressVO;
 import org.junit.jupiter.api.Test;
 
@@ -118,5 +119,24 @@ class QuestionStatsTest {
         row.setAccepted(accepted);
         row.setPending(pending);
         return row;
+    }
+
+    @Test
+    void tagAttemptsAverageThePassedQuestionsAndSkipRareTags() {
+        List<Question> questions = List.of(
+                question(1L, "[\"easy\",\"数组\"]"),
+                question(2L, "[\"hard\",\"数组\",\"动态规划\"]"),
+                question(3L, "[\"动态规划\"]"),
+                question(4L, "[\"图\"]"),
+                question(5L, "[\"栈\"]"));
+        // 题 5 没通过；「图」只通过 1 道
+        Map<Long, Integer> attempts = Map.of(1L, 1, 2L, 5, 3L, 3, 4L, 9);
+
+        assertEquals(List.of(new TagAttemptsVO("动态规划", 2, 4.0), new TagAttemptsVO("数组", 2, 3.0)),
+                QuestionStats.buildTagAttempts(questions, attempts, 2, 3));
+        assertEquals(1, QuestionStats.buildTagAttempts(questions, attempts, 2, 1).size());
+        // 都不够 2 道时放宽到 1 道
+        assertEquals(List.of(new TagAttemptsVO("图", 1, 9.0)),
+                QuestionStats.buildTagAttempts(List.of(question(4L, "[\"图\"]")), attempts, 2, 3));
     }
 }

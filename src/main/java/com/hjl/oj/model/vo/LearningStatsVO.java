@@ -27,4 +27,16 @@ public class LearningStatsVO implements Serializable {
 
     @Schema(description = "第一次提交就通过的题目数")
     private Integer firstTrySolved;
+
+    @Schema(description = "最近一次就通过的题，最近的在前，最多 6 道")
+    private List<SolvedQuestionVO> firstTryRecent;
+
+    @Schema(description = "最近一年一天里各个小时（0-23）的提交次数，24 个数")
+    private List<Integer> hourCounts;
+
+    @Schema(description = "判完的提交按结果分的次数，次数从多到少，没有的结果不出现")
+    private List<VerdictCountVO> verdicts;
+
+    @Schema(description = "最常卡住的标签：已通过的题平均第几次才过，从多到少，最多 3 个")
+    private List<TagAttemptsVO> stuckTags;
 }

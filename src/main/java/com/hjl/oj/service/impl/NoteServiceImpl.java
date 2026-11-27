@@ -14,7 +14,10 @@ import com.hjl.oj.model.dto.note.NoteUpdateRequest;
 import com.hjl.oj.model.entity.Note;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.User;
+import com.hjl.oj.model.enums.QuestionDifficultyEnum;
+import com.hjl.oj.model.vo.NoteOverviewVO;
 import com.hjl.oj.model.vo.NoteSummaryVO;
+import com.hjl.oj.model.vo.NoteTagVO;
 import com.hjl.oj.model.vo.NoteVO;
 import com.hjl.oj.service.NoteService;
 import com.hjl.oj.service.QuestionService;
@@ -25,6 +28,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,10 +50,17 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements No
 
     static final int SNIPPET_LENGTH = 90;
 
+    static final int EXCERPT_LENGTH = 600;
+
     /**
-     * 列表只取正文开头这么多字做摘要，不把整篇正文读出来
+     * 列表只取正文开头这么多字做摘要和卡片片段，不把整篇正文读出来
      */
-    private static final int SNIPPET_SOURCE_LENGTH = 400;
+    private static final int SNIPPET_SOURCE_LENGTH = 800;
+
+    /**
+     * 笔记总览里最多列几个标签
+     */
+    static final int OVERVIEW_TAG_LIMIT = 12;
 
     @Resource
     private QuestionService questionService;
@@ -134,12 +146,20 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements No
                         "LEFT(content, " + SNIPPET_SOURCE_LENGTH + ") AS content")
                 .eq("userId", loginUser.getId())
                 .eq(request.getQuestionId() != null, "questionId", request.getQuestionId())
+                .isNotNull(Boolean.TRUE.equals(request.getLinked()), "questionId")
+                .isNull(Boolean.FALSE.equals(request.getLinked()), "questionId")
                 .orderByDesc("updateTime")
                 .orderByDesc("id");
         String keyword = StringUtils.trimToNull(request.getKeyword());
         if (keyword != null) {
             String pattern = "%" + escapeLike(StringUtils.left(keyword, 50)) + "%";
             wrapper.and(inner -> inner.apply("title LIKE {0}", pattern).or().apply("content LIKE {0}", pattern));
+        }
+        String tag = StringUtils.trimToNull(request.getTag());
+        if (tag != null) {
+            // tags 列是 JSON 数组的文本，按带引号的整个标签找；参数绑定，不拼进 SQL
+            wrapper.apply("questionId IN (SELECT id FROM question WHERE isDelete = 0 AND tags LIKE {0})",
+                    "%\"" + escapeLike(StringUtils.left(tag, 50)) + "\"%");
         }
         Page<Note> page = this.page(new Page<>(request.getCurrent(), request.getPageSize()), wrapper);
         Map<Long, Question> questions = loadQuestions(page.getRecords().stream()
@@ -150,6 +170,7 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements No
             vo.setId(note.getId());
             vo.setTitle(note.getTitle());
             vo.setSnippet(NoteSnippets.plain(note.getContent(), SNIPPET_LENGTH));
+            vo.setExcerpt(NoteSnippets.excerpt(note.getContent(), EXCERPT_LENGTH));
             vo.setQuestionId(note.getQuestionId());
             vo.setUpdateTime(note.getUpdateTime());
             Question question = questionOf(questions, note.getQuestionId());
@@ -160,6 +181,45 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements No
             return vo;
         }).toList());
         return result;
+    }
+
+    @Override
+    public NoteOverviewVO getMyOverview(User loginUser) {
+        List<Map<String, Object>> rows = this.listMaps(new QueryWrapper<Note>()
+                .select("questionId", "COUNT(*) AS noteCount")
+                .eq("userId", loginUser.getId())
+                .groupBy("questionId"));
+        int total = 0;
+        int free = 0;
+        Map<Long, Integer> countByQuestion = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            int count = ((Number) row.get("noteCount")).intValue();
+            total += count;
+            Object questionId = row.get("questionId");
+            if (questionId == null) {
+                free += count;
+            } else {
+                countByQuestion.put(((Number) questionId).longValue(), count);
+            }
+        }
+        // 各标签下的笔记数：按笔记挂的题的标签算，难度标签不算
+        Map<String, Integer> tagCounts = new LinkedHashMap<>();
+        loadQuestions(countByQuestion.keySet()).values().forEach(question ->
+                QuestionStats.parseTags(question.getTags()).stream()
+                        .map(String::strip)
+                        .distinct()
+                        .filter(item -> QuestionDifficultyEnum.fromTag(item).isEmpty())
+                        .forEach(item -> tagCounts.merge(item, countByQuestion.get(question.getId()), Integer::sum)));
+        NoteOverviewVO vo = new NoteOverviewVO();
+        vo.setTotal(total);
+        vo.setFree(free);
+        vo.setLinked(total - free);
+        vo.setTags(tagCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(OVERVIEW_TAG_LIMIT)
+                .map(entry -> new NoteTagVO(entry.getKey(), entry.getValue()))
+                .toList());
+        return vo;
     }
 
     /**

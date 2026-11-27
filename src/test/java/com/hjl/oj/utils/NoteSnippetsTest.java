@@ -37,4 +37,20 @@ class NoteSnippetsTest {
     void unclosedCodeFenceDoesNotLeakCode() {
         assertEquals("开头 [代码]", NoteSnippets.plain("开头\n```\nsecret code", 50));
     }
+
+    @Test
+    void excerptKeepsMarkdownAndCutsAtWholeLines() {
+        assertEquals("## 思路\n双指针", NoteSnippets.excerpt("## 思路\r\n双指针\n", 600));
+        String long1 = "## 思路\n" + "一".repeat(30) + "\n" + "二".repeat(30);
+        // 截在第二行中间：退回到整行，后面加省略
+        assertEquals("## 思路\n" + "一".repeat(30) + "\n\n…", NoteSnippets.excerpt(long1, 50));
+        assertEquals("", NoteSnippets.excerpt("  ", 10));
+    }
+
+    @Test
+    void excerptClosesACodeBlockItCutsInto() {
+        String markdown = "说明\n```java\nint a = 1;\nint b = 2;\nint c = 3;\n```";
+        String excerpt = NoteSnippets.excerpt(markdown, 34);
+        assertEquals("说明\n```java\nint a = 1;\nint b = 2;\n```\n\n…", excerpt);
+    }
 }

@@ -8,6 +8,8 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.hjl.oj.common.ErrorCode;
+import com.hjl.oj.companion.context.Verdict;
+import com.hjl.oj.companion.context.VerdictClassifier;
 import com.hjl.oj.constant.CommonConstant;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.exception.ThrowUtils;
@@ -31,6 +33,7 @@ import com.hjl.oj.model.vo.QuestionSubmitVO;
 import com.hjl.oj.model.vo.SolvedQuestionVO;
 import com.hjl.oj.model.vo.SubmitCalendarVO;
 import com.hjl.oj.model.vo.SubmitDayVO;
+import com.hjl.oj.model.vo.VerdictCountVO;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import com.hjl.oj.service.UserService;
@@ -43,7 +46,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,6 +75,21 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
      * 学习统计里「最近通过」最多列几道
      */
     private static final int RECENT_SOLVED_LIMIT = 10;
+
+    private static final int FIRST_TRY_RECENT_LIMIT = 6;
+
+    /**
+     * 「最常卡住的标签」只算通过了至少这么多道题的标签（都不够时放宽）
+     */
+    private static final int STUCK_TAG_MIN_SOLVED = 2;
+
+    private static final int STUCK_TAG_LIMIT = 3;
+
+    /**
+     * 「什么时候做题」看最近一年
+     */
+    private static final int HOUR_STATS_DAYS = 365;
+
     /**
      * 归档排序字段：判题耗时（judgeInfo.time，ms）
      */
@@ -549,21 +571,70 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
                 .map(row -> new LanguageStatVO(row.getLanguage(), languageName(row.getLanguage()),
                         toInt(row.getSubmitCount()), toInt(row.getAcceptedCount()), toInt(row.getSolvedCount())))
                 .toList());
-        vo.setRecentSolved(firstAccepted.stream()
+        List<FirstAcceptedRow> solved = firstAccepted.stream()
                 .filter(row -> questionById.containsKey(row.getQuestionId()))
-                .limit(RECENT_SOLVED_LIMIT)
-                .map(row -> {
-                    Question question = questionById.get(row.getQuestionId());
-                    return new SolvedQuestionVO(question.getId(), question.getTitle(),
-                            QuestionStats.parseTags(question.getTags()), row.getSolvedTime(),
-                            languageName(row.getLanguage()), toInt(row.getAttempts()));
-                })
-                .toList());
-        vo.setFirstTrySolved((int) firstAccepted.stream()
-                .filter(row -> questionById.containsKey(row.getQuestionId()))
+                .toList();
+        Function<FirstAcceptedRow, SolvedQuestionVO> toSolvedVO = row -> {
+            Question question = questionById.get(row.getQuestionId());
+            return new SolvedQuestionVO(question.getId(), question.getTitle(),
+                    QuestionStats.parseTags(question.getTags()), row.getSolvedTime(),
+                    languageName(row.getLanguage()), toInt(row.getAttempts()));
+        };
+        vo.setRecentSolved(solved.stream().limit(RECENT_SOLVED_LIMIT).map(toSolvedVO).toList());
+        List<FirstAcceptedRow> firstTry = solved.stream()
                 .filter(row -> row.getAttempts() != null && row.getAttempts() == 1)
-                .count());
+                .toList();
+        vo.setFirstTrySolved(firstTry.size());
+        vo.setFirstTryRecent(firstTry.stream().limit(FIRST_TRY_RECENT_LIMIT).map(toSolvedVO).toList());
+        Map<Long, Integer> attemptsByQuestion = solved.stream()
+                .filter(row -> row.getAttempts() != null)
+                .collect(Collectors.toMap(FirstAcceptedRow::getQuestionId, row -> toInt(row.getAttempts()),
+                        (first, second) -> first));
+        vo.setStuckTags(QuestionStats.buildTagAttempts(questions, attemptsByQuestion, STUCK_TAG_MIN_SOLVED,
+                STUCK_TAG_LIMIT));
+        vo.setHourCounts(hourCounts(this.baseMapper.selectUserHourCounts(userId, HOUR_STATS_DAYS)));
+        vo.setVerdicts(verdictCounts(this.baseMapper.selectUserVerdictCounts(userId)));
         return vo;
+    }
+
+    /**
+     * 24 个小时各自的提交次数，没提交的小时补 0
+     */
+    static List<Integer> hourCounts(List<HourCountRow> rows) {
+        int[] counts = new int[24];
+        for (HourCountRow row : rows) {
+            if (row.getHour() != null && row.getHour() >= 0 && row.getHour() < 24) {
+                counts[row.getHour()] += toInt(row.getSubmitCount());
+            }
+        }
+        return Arrays.stream(counts).boxed().toList();
+    }
+
+    /**
+     * 按判题结果归类（判题消息中英文写法都认），系统错误、认不出的算「其他」；次数从多到少
+     */
+    static List<VerdictCountVO> verdictCounts(List<VerdictCountRow> rows) {
+        Map<String, int[]> counts = new LinkedHashMap<>();
+        Map<String, String> texts = new HashMap<>();
+        for (VerdictCountRow row : rows) {
+            Verdict verdict = VerdictClassifier.classify(row.getStatus(), row.getMessage());
+            String key = switch (verdict) {
+                case ACCEPTED -> "accepted";
+                case WRONG_ANSWER -> "wrong_answer";
+                case TIME_LIMIT_EXCEEDED -> "time_limit";
+                case MEMORY_LIMIT_EXCEEDED -> "memory_limit";
+                case RUNTIME_ERROR -> "runtime_error";
+                case COMPILE_ERROR -> "compile_error";
+                default -> "other";
+            };
+            texts.putIfAbsent(key, "other".equals(key) ? "其他" : verdict.getText());
+            counts.computeIfAbsent(key, ignored -> new int[1])[0] += toInt(row.getSubmitCount());
+        }
+        return counts.entrySet().stream()
+                .filter(entry -> entry.getValue()[0] > 0)
+                .map(entry -> new VerdictCountVO(entry.getKey(), texts.get(entry.getKey()), entry.getValue()[0]))
+                .sorted(Comparator.comparing(VerdictCountVO::getCount).reversed())
+                .toList();
     }
 
     /**

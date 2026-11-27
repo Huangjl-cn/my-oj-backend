@@ -40,4 +40,30 @@ public final class NoteSnippets {
         }
         return text.substring(0, text.offsetByCodePoints(0, maxLength)).stripTrailing() + "…";
     }
+
+    /**
+     * 卡片墙用的正文片段，仍是 Markdown：超长时尽量在整行处截断；截在代码块中间就补上结尾的 ```，后面加一行「…」
+     *
+     * @param markdown  正文（可以只是开头一段）
+     * @param maxLength 最多多少个字
+     */
+    public static String excerpt(String markdown, int maxLength) {
+        if (StringUtils.isBlank(markdown)) {
+            return "";
+        }
+        String text = markdown.replace("\r\n", "\n").strip();
+        if (text.codePointCount(0, text.length()) <= maxLength) {
+            return text;
+        }
+        String cut = text.substring(0, text.offsetByCodePoints(0, maxLength));
+        int lineEnd = cut.lastIndexOf('\n');
+        if (lineEnd > cut.length() / 2) {
+            cut = cut.substring(0, lineEnd);
+        }
+        cut = cut.stripTrailing();
+        if (StringUtils.countMatches(cut, "```") % 2 == 1) {
+            cut += "\n```";
+        }
+        return cut + "\n\n…";
+    }
 }

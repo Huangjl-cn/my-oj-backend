@@ -3,15 +3,19 @@ package com.hjl.oj.service.impl;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.hjl.oj.mapper.QuestionSubmitMapper;
 import com.hjl.oj.model.dto.questionsubmit.FirstAcceptedRow;
+import com.hjl.oj.model.dto.questionsubmit.HourCountRow;
 import com.hjl.oj.model.dto.questionsubmit.LanguageStatRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow;
+import com.hjl.oj.model.dto.questionsubmit.VerdictCountRow;
 import com.hjl.oj.model.entity.Question;
 import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.JudgeResultEnum;
 import com.hjl.oj.model.vo.LanguageStatVO;
 import com.hjl.oj.model.vo.LearningStatsVO;
 import com.hjl.oj.model.vo.SolvedQuestionVO;
+import com.hjl.oj.model.vo.TagAttemptsVO;
 import com.hjl.oj.model.vo.TagProgressVO;
+import com.hjl.oj.model.vo.VerdictCountVO;
 import com.hjl.oj.service.QuestionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,6 +72,10 @@ class QuestionSubmitServiceImplStatsTest {
         when(questionSubmitMapper.selectUserFirstAccepted(ACCEPTED, 7L)).thenReturn(List.of(
                 firstAccepted(2L, later, "cpp", 4L),
                 firstAccepted(1L, earlier, "java", 1L)));
+        when(questionSubmitMapper.selectUserHourCounts(7L, 365)).thenReturn(List.of(hour(21, 5L), hour(9, 2L)));
+        when(questionSubmitMapper.selectUserVerdictCounts(7L)).thenReturn(List.of(
+                verdict(2, "Accepted", 3L), verdict(2, "Wrong Answer", 4L), verdict(2, "答案错误", 1L),
+                verdict(2, "Time Limit Exceeded", 2L), verdict(3, null, 1L)));
 
         LearningStatsVO stats = questionSubmitService.getMyLearningStats(user);
 
@@ -81,6 +89,18 @@ class QuestionSubmitServiceImplStatsTest {
                 new SolvedQuestionVO(1L, "两数之和", List.of("easy", "数组"), earlier, "Java 25", 1)),
                 stats.getRecentSolved());
         assertEquals(1, stats.getFirstTrySolved());
+        assertEquals(List.of(1L), stats.getFirstTryRecent().stream().map(SolvedQuestionVO::getQuestionId).toList());
+        // 「数组」通过了 2 道，平均 (4 + 1) / 2；「栈」只通过 1 道，不够格
+        assertEquals(List.of(new TagAttemptsVO("数组", 2, 2.5)), stats.getStuckTags());
+        assertEquals(24, stats.getHourCounts().size());
+        assertEquals(5, stats.getHourCounts().get(21));
+        assertEquals(2, stats.getHourCounts().get(9));
+        // 中英文写法归到一起，判题失败算「其他」，次数从多到少
+        assertEquals(List.of(
+                new VerdictCountVO("wrong_answer", "答案错误", 5),
+                new VerdictCountVO("accepted", "通过", 3),
+                new VerdictCountVO("time_limit", "超时", 2),
+                new VerdictCountVO("other", "其他", 1)), stats.getVerdicts());
         // 题目只查一次，不逐题查
         verify(questionService, times(1)).list(any(Wrapper.class));
     }
@@ -143,6 +163,21 @@ class QuestionSubmitServiceImplStatsTest {
         row.setSubmitCount(submits);
         row.setAcceptedCount(accepted);
         row.setSolvedCount(solved);
+        return row;
+    }
+
+    private static HourCountRow hour(int hour, Long count) {
+        HourCountRow row = new HourCountRow();
+        row.setHour(hour);
+        row.setSubmitCount(count);
+        return row;
+    }
+
+    private static VerdictCountRow verdict(int status, String message, Long count) {
+        VerdictCountRow row = new VerdictCountRow();
+        row.setStatus(status);
+        row.setMessage(message);
+        row.setSubmitCount(count);
         return row;
     }
 
