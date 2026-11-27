@@ -46,6 +46,14 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 4. **学习统计** `progress/stats`（`getMyLearningStats`）：各标签的题目数 / 已通过 / 做过没通过（`QuestionStats.buildTagProgress`，难度标签不算）、各语言的提交次数和通过题数、最近第一次通过的 10 道题和一次通过的题数。「第一次通过是第几次提交」用两层 `ROW_NUMBER` 在 `selectUserFirstAccepted` 里一次算出；题目（id、title、tags）只查一次。按难度的进度（`progress/my`）和做题日历（`progress/calendar`）是另外的接口，不重复返回。
 5. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
 
+### 题单和收藏（`QuestionListServiceImpl`，接口 `/question_list/*`）
+
+- 表 `question_list`（type：favorite 我的收藏 / custom 自建 / official 官方）和 `question_list_item`（同一题单里题目唯一，按 `sortOrder` 排，删题直接删行）。
+- 「我的收藏」每人一个，第一次用到时建；`uniqueKey = favorite:<userId>` 的唯一索引保证并发下也只有一个（`DuplicateKeyException` 时重新读）。收藏不能改名、不能删。
+- 权限：收藏和自建题单只有本人能看能改，别人的当作不存在（NOT_FOUND）；官方题单所有登录用户能看，只有管理员能建能改。
+- 已删除的题不显示也不计数：查题单里的题统一走 `selectActiveItems`（JOIN 未删除的题）。卡片上的题目数和已通过数（`listSolvedQuestionIds`）对所有题单一次查出，不逐个查。
+- 限制：每人 50 个自建题单，每个题单 500 道题（收藏 2000）；标题 40 字、简介 200 字。改名用 `UpdateWrapper.set` 写入，简介清空时写成 null（`updateById` 会跳过 null 字段）。
+
 ### AI 陪练（`ai/` + `companion/`）
 
 LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 API Key。前端对接见 `docs/frontend/ai-companion.md`。

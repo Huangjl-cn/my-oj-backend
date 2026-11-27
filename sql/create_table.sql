@@ -146,3 +146,33 @@ create table if not exists companion_message
     index idx_conversation_id (conversationId, id),
     index idx_submissionId (submissionId)
 ) comment 'AI 陪练消息' collate = utf8mb4_unicode_ci;
+
+-- 题单：自建的、官方的（管理员建，所有人可见），以及每人一个「我的收藏」
+-- 收藏也是题单，第一次用到时自动建；uniqueKey = 'favorite:<userId>' 保证每人只有一个
+create table if not exists question_list
+(
+    id          bigint auto_increment comment 'id' primary key,
+    userId      bigint                             not null comment '创建人 id',
+    title       varchar(64)                        not null comment '标题',
+    description varchar(512)                       null comment '简介',
+    type        varchar(16)                        not null comment 'favorite 收藏 / custom 自建 / official 官方',
+    uniqueKey   varchar(64)                        null comment '收藏题单为 favorite:<userId>，其他为空',
+    createTime  datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime  datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    isDelete    tinyint  default 0                 not null comment '是否删除',
+    unique key uk_unique_key (uniqueKey),
+    index idx_user_type (userId, type),
+    index idx_type (type)
+) comment '题单' collate = utf8mb4_unicode_ci;
+
+-- 题单里的题；同一道题在一个题单里只出现一次，删除题单里的题直接删行
+create table if not exists question_list_item
+(
+    id         bigint auto_increment comment 'id' primary key,
+    listId     bigint                             not null comment '题单 id',
+    questionId bigint                             not null comment '题目 id',
+    sortOrder  int      default 0                 not null comment '在题单里的顺序，小的在前',
+    createTime datetime default CURRENT_TIMESTAMP not null comment '加入时间',
+    unique key uk_list_question (listId, questionId),
+    index idx_question (questionId)
+) comment '题单里的题' collate = utf8mb4_unicode_ci;
