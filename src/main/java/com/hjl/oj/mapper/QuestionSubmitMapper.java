@@ -2,6 +2,8 @@ package com.hjl.oj.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.hjl.oj.model.dto.questionsubmit.FirstAcceptedRow;
+import com.hjl.oj.model.dto.questionsubmit.LanguageStatRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow;
@@ -88,4 +90,16 @@ public interface QuestionSubmitMapper extends BaseMapper<QuestionSubmit> {
      */
     SubmitDayRow selectUserSubmitTotals(@Param("acceptedSql") String acceptedSql,
                                         @Param("userId") long userId);
+
+    /**
+     * 用户按语言的提交次数、通过次数、通过的题目数，按提交次数从多到少
+     */
+    List<LanguageStatRow> selectUserLanguageStats(@Param("acceptedSql") String acceptedSql,
+                                                  @Param("userId") long userId);
+
+    /**
+     * 用户在每道题（只算未删除的题）上第一次通过的那次提交：通过时间、语言、是第几次提交；按通过时间从近到远
+     */
+    List<FirstAcceptedRow> selectUserFirstAccepted(@Param("acceptedSql") String acceptedSql,
+                                                   @Param("userId") long userId);
 }

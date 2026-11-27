@@ -115,6 +115,16 @@ public class QuestionController {
     }
 
     /**
+     * 当前用户的学习统计：各标签的做题情况、各语言的提交情况、最近通过的题、一次通过的题目数。
+     * 按难度的进度见 /progress/my，做题日历见 /progress/calendar
+     */
+    @GetMapping("/progress/stats")
+    public BaseResponse<LearningStatsVO> getMyLearningStats(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(questionSubmitService.getMyLearningStats(loginUser));
+    }
+
+    /**
      * 创建
      */
     @PostMapping("/add")

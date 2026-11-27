@@ -16,6 +16,7 @@ import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
+import com.hjl.oj.model.vo.LearningStatsVO;
 import com.hjl.oj.model.vo.SubmitCalendarVO;
 
 import java.util.Date;
@@ -97,6 +98,11 @@ public interface QuestionSubmitService extends IService<QuestionSubmit> {
      * 当前用户的做题日历：最近 days 天每天的提交次数（7～366，超出范围按边界算），以及全部提交统计
      */
     SubmitCalendarVO getMySubmitCalendar(User loginUser, int days);
+
+    /**
+     * 当前用户的学习统计：各标签的做题情况、各语言的提交情况、最近通过的题、一次通过的题目数
+     */
+    LearningStatsVO getMyLearningStats(User loginUser);
 
     /**
      * 取最老的一条待判题提交（仅取 id），无则返回 null。

@@ -8,6 +8,7 @@ import com.hjl.oj.model.enums.QuestionDifficultyEnum;
 import com.hjl.oj.model.vo.DifficultyCountVO;
 import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionTagVO;
+import com.hjl.oj.model.vo.TagProgressVO;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
@@ -103,6 +104,42 @@ public final class QuestionStats {
         List<QuestionTagVO> tags = new ArrayList<>();
         counts.forEach((tag, count) -> tags.add(new QuestionTagVO(tag, count)));
         tags.sort(Comparator.comparing(QuestionTagVO::getCount).reversed());
+        return tags;
+    }
+
+    /**
+     * 各标签下的做题情况（难度标签不算）：题目数、已通过数、做过但没通过数；
+     * 按题目数从多到少，题目数相同按首次出现的顺序
+     *
+     * @param questions 题库里的题（只需要 id 和 tags）
+     * @param rows      用户在各题上的提交汇总
+     */
+    public static List<TagProgressVO> buildTagProgress(List<Question> questions, List<QuestionProgressRow> rows) {
+        Map<Long, String> statusByQuestion = new HashMap<>();
+        for (QuestionProgressRow row : rows) {
+            statusByQuestion.put(row.getQuestionId(), statusOf(row));
+        }
+        // 每个标签：[题目数, 已通过, 做过没通过]
+        Map<String, int[]> counts = new LinkedHashMap<>();
+        for (Question question : questions) {
+            String status = statusByQuestion.get(question.getId());
+            parseTags(question.getTags()).stream()
+                    .map(String::strip)
+                    .distinct()
+                    .filter(tag -> QuestionDifficultyEnum.fromTag(tag).isEmpty())
+                    .forEach(tag -> {
+                        int[] count = counts.computeIfAbsent(tag, key -> new int[3]);
+                        count[0]++;
+                        if (STATUS_PASSED.equals(status)) {
+                            count[1]++;
+                        } else if (status != null) {
+                            count[2]++;
+                        }
+                    });
+        }
+        List<TagProgressVO> tags = new ArrayList<>();
+        counts.forEach((tag, count) -> tags.add(new TagProgressVO(tag, count[0], count[1], count[2])));
+        tags.sort(Comparator.comparing(TagProgressVO::getTotal).reversed());
         return tags;
     }
 

@@ -20,12 +20,15 @@ import com.hjl.oj.model.entity.User;
 import com.hjl.oj.model.enums.JudgeResultEnum;
 import com.hjl.oj.model.enums.QuestionSubmitLanguageEnum;
 import com.hjl.oj.model.enums.QuestionSubmitStatusEnum;
+import com.hjl.oj.model.vo.LanguageStatVO;
+import com.hjl.oj.model.vo.LearningStatsVO;
 import com.hjl.oj.model.vo.QuestionProgressVO;
 import com.hjl.oj.model.vo.QuestionSubmitGroupVO;
 import com.hjl.oj.model.vo.QuestionSubmitQueueStatusVO;
 import com.hjl.oj.model.vo.QuestionSubmitRankVO;
 import com.hjl.oj.model.vo.QuestionSubmitSummaryVO;
 import com.hjl.oj.model.vo.QuestionSubmitVO;
+import com.hjl.oj.model.vo.SolvedQuestionVO;
 import com.hjl.oj.model.vo.SubmitCalendarVO;
 import com.hjl.oj.model.vo.SubmitDayVO;
 import com.hjl.oj.service.QuestionService;
@@ -61,6 +64,10 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
      */
     private static final int MIN_CALENDAR_DAYS = 7;
     private static final int MAX_CALENDAR_DAYS = 366;
+    /**
+     * 学习统计里「最近通过」最多列几道
+     */
+    private static final int RECENT_SOLVED_LIMIT = 10;
     /**
      * 归档排序字段：判题耗时（judgeInfo.time，ms）
      */
@@ -521,6 +528,50 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         vo.setTotalSubmits(totals == null ? 0 : toInt(totals.getSubmitCount()));
         vo.setAcceptedSubmits(totals == null ? 0 : toInt(totals.getAcceptedCount()));
         return vo;
+    }
+
+    @Override
+    public LearningStatsVO getMyLearningStats(User loginUser) {
+        long userId = loginUser.getId();
+        String acceptedSql = JudgeResultEnum.ACCEPTED.getSqlFragment();
+        // 题库里的题只取 id、标题和标签，一次取全，标签统计和最近通过的题都用它，不逐题查
+        List<Question> questions = questionService.list(new QueryWrapper<Question>()
+                .select("id", "title", "tags")
+                .eq("isDelete", false));
+        Map<Long, Question> questionById = questions.stream()
+                .collect(Collectors.toMap(Question::getId, Function.identity(), (first, second) -> first));
+        List<FirstAcceptedRow> firstAccepted = this.baseMapper.selectUserFirstAccepted(acceptedSql, userId);
+
+        LearningStatsVO vo = new LearningStatsVO();
+        vo.setTags(QuestionStats.buildTagProgress(questions,
+                this.baseMapper.selectUserQuestionProgress(acceptedSql, userId)));
+        vo.setLanguages(this.baseMapper.selectUserLanguageStats(acceptedSql, userId).stream()
+                .map(row -> new LanguageStatVO(row.getLanguage(), languageName(row.getLanguage()),
+                        toInt(row.getSubmitCount()), toInt(row.getAcceptedCount()), toInt(row.getSolvedCount())))
+                .toList());
+        vo.setRecentSolved(firstAccepted.stream()
+                .filter(row -> questionById.containsKey(row.getQuestionId()))
+                .limit(RECENT_SOLVED_LIMIT)
+                .map(row -> {
+                    Question question = questionById.get(row.getQuestionId());
+                    return new SolvedQuestionVO(question.getId(), question.getTitle(),
+                            QuestionStats.parseTags(question.getTags()), row.getSolvedTime(),
+                            languageName(row.getLanguage()), toInt(row.getAttempts()));
+                })
+                .toList());
+        vo.setFirstTrySolved((int) firstAccepted.stream()
+                .filter(row -> questionById.containsKey(row.getQuestionId()))
+                .filter(row -> row.getAttempts() != null && row.getAttempts() == 1)
+                .count());
+        return vo;
+    }
+
+    /**
+     * 语言的显示名；已经不支持的语言（历史提交里可能有）就用标识本身
+     */
+    private static String languageName(String language) {
+        QuestionSubmitLanguageEnum languageEnum = QuestionSubmitLanguageEnum.getEnumByValue(language);
+        return languageEnum == null ? language : languageEnum.getText();
     }
 
     private static int toInt(Long value) {
