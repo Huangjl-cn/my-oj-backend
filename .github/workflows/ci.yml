@@ -1,0 +1,43 @@
+# 每次 push 和提 PR 都跑一遍：编译 + 全部测试（测试不连数据库和沙箱，GitHub 的机器上可以直接跑）
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+
+permissions:
+  contents: read
+
+# 同一个分支连续 push 时，只跑最新的那次
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v7
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: 编译和测试
+        run: mvn -B -ntp verify
+
+      - name: 测试失败时保存测试报告
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
