@@ -43,7 +43,24 @@ mvn clean package            # 构建，产物 target/my-oj.jar
 1. **全部提交视图** `list/page`：请求用独立的 `QuestionSubmitArchiveQueryRequest`（不继承 PageRequest，sortOrder 默认 descend；`my/list/page` 使用的 `QuestionSubmitQueryRequest` 保持不动）。`judgeResult` / `sortField` / `sortOrder` 走白名单校验（非法抛 PARAMS_ERROR）；判题结果语义的唯一来源是 `JudgeResultEnum`（含 SQL 片段常量和 `from(status, message)` 派生）。排序表达式（含 JSON_EXTRACT）通过 `wrapper.last("ORDER BY ...")` 整体拼接，缺失指标排在最后，同值按 createTime 倒序。响应平铺 questionTitle / questionTags / userName / userAvatar 和派生的 judgeResult，题目和用户摘要用批量 `listByIds` 预取（不要改回 N+1）。
 2. **按题聚合视图** `group/page`：XML 中的自定义 SQL `selectQuestionGroupPage` / `countQuestionGroup`（窗口函数 `ROW_NUMBER` + `MIN(...) OVER`）；total 是题目数（`setSearchCount(false)` + 显式 count）；bestTime / bestMemory 分别独立取最小值（可能来自不同提交），统计范围随 `judgeResult` 等筛选变化，没有有效指标的行自动排除，null 排在最后。
 3. **指标击败率** `rank`：对比人群是同题、同语言、仅 Accepted（复用 `JudgeResultEnum.ACCEPTED.getSqlFragment()`）、含本人；"超过"按指标 `>=` 本次提交计（持平计入，首次通过为 1/1 = 100%）。只返回 Total / Beaten 计数，比例由前端计算。
-4. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
+4. **学习统计** `progress/stats`（`getMyLearningStats`）：各标签的题目数 / 已通过 / 做过没通过（`QuestionStats.buildTagProgress`，难度标签不算）、各语言的提交次数和通过题数、最近第一次通过的 10 道题、一次通过的题数和最近 6 道、最近一年一天里各小时的提交次数（`selectUserHourCounts`）、判完的提交按结果分的次数（`selectUserVerdictCounts` 按「状态 + 消息第一行」分组，再用 `VerdictClassifier` 归类，中英文写法都认）、最常卡住的标签（`QuestionStats.buildTagAttempts`：已通过的题平均第几次才过，通过不到 2 道的标签不算）。「第一次通过是第几次提交」用两层 `ROW_NUMBER` 在 `selectUserFirstAccepted` 里一次算出；题目（id、title、tags）只查一次。按难度的进度（`progress/my`）和做题日历（`progress/calendar`）是另外的接口，不重复返回。
+5. **SQL 前提**：`judgeInfo` 列永远是合法 JSON（WAITING 行写 `"{}"`，见 `doQuestionSubmit`），以上 SQL 的 `JSON_EXTRACT` 依赖这一点；自定义 SQL 的列名直接用 camelCase（因为 `map-underscore-to-camel-case: false`）；窗口函数要求 MySQL 8.0+。
+
+### 题单和收藏（`QuestionListServiceImpl`，接口 `/question_list/*`）
+
+- 表 `question_list`（type：favorite 我的收藏 / custom 自建 / official 官方）和 `question_list_item`（同一题单里题目唯一，按 `sortOrder` 排，删题直接删行）。
+- 「我的收藏」每人一个，第一次用到时建；`uniqueKey = favorite:<userId>` 的唯一索引保证并发下也只有一个（`DuplicateKeyException` 时重新读）。收藏不能改名、不能删。
+- 权限：收藏和自建题单只有本人能看能改，别人的当作不存在（NOT_FOUND）；官方题单所有登录用户能看，只有管理员能建能改。
+- 已删除的题不显示也不计数：查题单里的题统一走 `selectActiveItems`（JOIN 未删除的题）。卡片上的题目数和已通过数（`listSolvedQuestionIds`）对所有题单一次查出，不逐个查。
+- 限制：每人 50 个自建题单，每个题单 500 道题（收藏 2000）；标题 40 字、简介 200 字。改名用 `UpdateWrapper.set` 写入，简介清空时写成 null（`updateById` 会跳过 null 字段）。
+
+### 笔记（`NoteServiceImpl`，接口 `/note/*`）
+
+- 表 `note`：`questionId` 可空（自由笔记），一道题可以有多篇；只有作者能看能改，别人的当作不存在（NOT_FOUND）。
+- 保存带版本号：`UpdateWrapper` 条件里带 `version`，`setSql("version = version + 1")`；没更新到时再查一次，区分「不存在」和「在别处改过了」（`ErrorCode.CONFLICT_ERROR` 40900）。
+- 列表按 `updateTime` 倒序，只取 `LEFT(content, 800)`：`NoteSnippets.plain` 做纯文字摘要，`NoteSnippets.excerpt` 做卡片墙用的 Markdown 片段（约 600 字，整行截断，截进代码块就补上结尾）。关键词在标题和正文里 LIKE，`escapeLike` 让 `%`、`_` 按普通字符找；`linked` 只看挂题的 / 自由的，`tag` 按挂的题的标签筛（`tags LIKE '%"标签"%'`，参数绑定）。`/note/overview` 给总数、挂题和自由的篇数、笔记最多的标签。
+- 自由笔记没有题目：取题目信息用 `questionOf`（`Map.of()` 不能用 null 查）。
+- 限制：每人 2000 篇，标题 80 字，正文 10 万字；挂题时默认标题「题目名 笔记」，否则「未命名笔记」。
 
 ### AI 陪练（`ai/` + `companion/`）
 
@@ -53,6 +70,9 @@ LangChain4j 调用 DeepSeek（OpenAI 兼容接口），费用走用户自己的 
 - **AI Service**（`companion/assistant/`）：聊天（流式、记忆、工具）、看答案（流式、思考模式、记忆）、提示和提交后反应（结构化输出 + 输出护栏）、记忆压缩。每次请求按用户的 Key、模型和改代码权限新建，不做单例。**系统提示词和用户消息只能通过 `@V` 变量代入**：框架会把模板当模板渲染，题目或代码里的 `{{` 直接作为模板会报错（见 `CompanionAssistantWiringTest`）。
 - **提示档位**（`companion/hint/HintLadder`）：0-5 档，表示"最多透露多少"，用户调 0-4，第 5 档只能通过看答案进入；提示接口按当前档位出，不改档位。用户只看到每档的名字和说明；每档按方向（找思路 IDEA / 找 bug BUG）各有一条给模型的规则，方向由模型判断、存在会话里，不展示给用户。改代码权限随档位放开（只修语法 → 可批注 → 每处 ≤3 行 → 不限），由 `CodeEditPolicy` 在 `edit_code` 工具里强制执行；文字回答的分寸由提示词约束。有问必答模式等同第 5 档。
 - **改代码**（`companion/edit/`）：修改只作用于请求带上来的代码快照，原文必须唯一匹配；返回 `CodeEditProposal`（baseHash + 每处明细 + resultCode），前端预览后由用户决定是否应用。
+- **读写笔记**（`companion/note/` + `NoteTools`，只在聊天时提供）：鸭鸭能列出本题的笔记、按关键词搜全部笔记、读某一篇，只能看到用户自己的。新建、局部替换、追加、整篇改写都只记在本次请求的 `NoteEditSession` 里，同一篇的多处修改合成一条 `NoteProposal`，随回答落在 `companion_message.noteEdits`（SSE 事件 `notes`）；用户预览后 `/companion/note/apply` 才写进笔记（`CompanionNoteServiceImpl`）。修改记着提议时的 `baseVersion`，应用时笔记已经改过就按 `changes` 在新内容上重放（对不上的跳过，整篇改写要用户确认覆盖）。`NoteContentPolicy`：还没到「看答案」时，提议里新写的代码行超过 3 行就拒绝（用户编辑器里和笔记原文里已有的行不算）。模拟模式下说到「笔记」会真的调用笔记工具（`MockReplyGenerator.toolCalls`）。
+- **轨迹**（`companion/trace/` + `CompanionTraceServiceImpl`，接口 `/companion/trace`）：每一轮（聊天、提示、看答案、提交后反应、整理记忆）在 `companion_trace_turn` 记一行，轮里每次模型调用、工具调用在 `companion_trace_step` 记一行（开始时间、耗时、token 含缓存命中、正文、思考、工具参数和结果）。`TraceRecorder` 作为 `ChatModelListener` 经 `ChatModelOptions.listeners` 挂到这一次的模型上（模拟模型同样回调），第一次调用时记下系统提示词、用户消息和工具清单（和这段对话上一轮相同就存空，读时沿用）；工具由流式回答的 `onToolExecuted` 交给它。记录写库失败只记日志，不影响回答。读的时候步骤按开始时间排；没有记录的旧对话从记忆还原（没有耗时）。参考题解随系统提示词原样显示（题解本来就是登录可见）。
+- **删除对话**（`/companion/conversation/delete`）：物理删除对话、消息、记忆和轨迹；删的是当前对话就换成最近的另一段（`activateLatest`），没有就开一段新的。占用 `AiCallGuard`，鸭鸭回答中不能删。
 - **事实由代码算，表达交给模型**（`companion/context/`）：提交后反应用到的"第几次、进步还是退步、连续同错、离上次多久"由 `SubmissionFactsBuilder` 计算；判题结果兼容 judgeInfo.message 中英文两种写法（`VerdictClassifier`）。
 - **会话与对话**：`companion_session` 每人每题一行（档位、方向、当前对话）；`companion_conversation` 是同一题下的多段对话，各有记忆和上下文占用；消息带 `conversationId`。聊天、提示、看答案、整理记忆都按请求里的 `conversationId` 操作，并把它设为当前对话，提交后的反应记在当前对话里。
 - **记忆**（`companion/memory/`）：每段对话一份，存 `companion_conversation.memory`（LangChain4j 序列化格式，写入前去掉思考内容）。上下文占用达到窗口的 `ai.companion.compact-ratio`（默认 0.8）时发送前自动压缩，也可手动压缩：较早的对话整理成分节笔记、用户提问原文保留、最近 `keep-recent-rounds` 轮原样保留，超长时分段滚动压缩。提示和反应不挂记忆，提示的结果由服务层补写进记忆，反应在下一轮作为"最近的提交与你的反应"带进用户消息。

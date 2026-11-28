@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hjl.oj.mapper.QuestionListItemMapper">
+
+    <!-- 题单里的题，跳过已删除的题；同一个题单里按 sortOrder、加入顺序排 -->
+    <select id="selectActiveItems" resultType="com.hjl.oj.model.entity.QuestionListItem">
+        SELECT i.id, i.listId, i.questionId, i.sortOrder, i.createTime
+        FROM question_list_item i
+        JOIN question q ON q.id = i.questionId AND q.isDelete = 0
+        WHERE i.listId IN
+        <foreach collection="listIds" item="listId" open="(" separator="," close=")">#{listId}</foreach>
+        ORDER BY i.listId, i.sortOrder, i.id
+    </select>
+
+</mapper>

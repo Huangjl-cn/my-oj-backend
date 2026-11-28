@@ -1,6 +1,7 @@
 package com.hjl.oj.model.vo;
 
 import com.hjl.oj.companion.edit.CodeEditProposal;
+import com.hjl.oj.companion.note.NoteProposal;
 import com.hjl.oj.model.dto.companion.CodeQuote;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -8,6 +9,7 @@ import lombok.Data;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
 /**
  * 一条陪练消息（对话历史）
@@ -45,6 +47,9 @@ public class CompanionMessageVO implements Serializable {
 
     @Schema(description = "这条消息附带的代码修改建议，没有为 null")
     private CodeEditProposal codeEdits;
+
+    @Schema(description = "这条消息附带的笔记提议（新建或修改），没有为 null")
+    private List<NoteProposal> noteEdits;
 
     private Date createTime;
 }

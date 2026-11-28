@@ -1,6 +1,7 @@
 package com.hjl.oj.service.impl;
 
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.hjl.oj.ai.call.AiCallGuard;
 import com.hjl.oj.ai.config.AiMode;
 import com.hjl.oj.ai.config.AiProperties;
@@ -15,12 +16,15 @@ import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
 import com.hjl.oj.companion.prompt.CompanionPrompts;
 import com.hjl.oj.companion.tool.CodeEditTools;
 import com.hjl.oj.companion.tool.CodeRewriteTools;
+import com.hjl.oj.companion.tool.NoteTools;
 import com.hjl.oj.companion.tool.SubmissionHistoryTools;
+import com.hjl.oj.companion.trace.TraceRecorder;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.judge.codesandbox.model.JudgeInfo;
 import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
+import com.hjl.oj.model.dto.companion.CompanionDeleteConversationRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionReactRequest;
@@ -42,6 +46,8 @@ import com.hjl.oj.service.AiSettingService;
 import com.hjl.oj.service.CompanionConversationService;
 import com.hjl.oj.service.CompanionMessageService;
 import com.hjl.oj.service.CompanionSessionService;
+import com.hjl.oj.service.CompanionTraceService;
+import com.hjl.oj.service.NoteService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import dev.langchain4j.data.message.AiMessage;
@@ -57,6 +63,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -103,6 +110,8 @@ class CompanionServiceImplTest {
 
     private final AiCallGuard aiCallGuard = new AiCallGuard();
 
+    private final CompanionTraceService traceService = mock(CompanionTraceService.class);
+
     private CompanionServiceImpl service;
 
     private User user;
@@ -118,7 +127,7 @@ class CompanionServiceImplTest {
         properties.getCompanion().setPersonaName("鸭鸭");
         service = new CompanionServiceImpl(questionService, questionSubmitService, aiSettingService, sessionService,
                 conversationService, messageService, assistantFactory, prompts, mock(MemoryCompactor.class), memoryStore,
-                aiCallGuard, properties);
+                aiCallGuard, properties, mock(NoteService.class), traceService);
         user = new User();
         user.setId(USER_ID);
         Question question = new Question();
@@ -148,6 +157,8 @@ class CompanionServiceImplTest {
         when(aiSettingService.requireCredential(USER_ID)).thenReturn(new AiCredential(null, "deepseek-flash"));
         when(prompts.systemMessage(any())).thenReturn("system");
         when(memoryStore.getMessages(any())).thenReturn(List.of());
+        when(traceService.startTurn(anyLong(), anyLong(), anyLong(), anyString(), any()))
+                .thenReturn(TraceRecorder.disabled());
     }
 
     @Test
@@ -202,7 +213,7 @@ class CompanionServiceImplTest {
 
         assertEquals(77L, vo.getMessageId());
         assertEquals("上次说过的话", vo.getMessage());
-        verify(assistantFactory, never()).reactionAssistant(any());
+        verify(assistantFactory, never()).reactionAssistant(any(), any());
     }
 
     @Test
@@ -222,7 +233,7 @@ class CompanionServiceImplTest {
         assertEquals(5L, saved.getValue().getSubmissionId());
         assertEquals(CONVERSATION_ID, saved.getValue().getConversationId());
         assertEquals(CONVERSATION_ID, vo.getConversationId());
-        verify(assistantFactory, never()).reactionAssistant(any());
+        verify(assistantFactory, never()).reactionAssistant(any(), any());
     }
 
     @Test
@@ -236,7 +247,7 @@ class CompanionServiceImplTest {
         when(result.content()).thenReturn(answer);
         CompanionHintAssistant hintAssistant = mock(CompanionHintAssistant.class);
         when(hintAssistant.hint(anyString(), anyString())).thenReturn(result);
-        when(assistantFactory.hintAssistant(any())).thenReturn(hintAssistant);
+        when(assistantFactory.hintAssistant(any(), any())).thenReturn(hintAssistant);
         when(prompts.hintMessage(any(), any(), anyString(), anyString())).thenReturn("prompt");
         CompanionHintRequest request = new CompanionHintRequest();
         request.setConversationId(CONVERSATION_ID);
@@ -269,11 +280,59 @@ class CompanionServiceImplTest {
     }
 
     @Test
+    void deletingTheCurrentConversationRemovesEverythingAndSwitchesToAnother() {
+        CompanionConversation other = new CompanionConversation();
+        other.setId(61L);
+        other.setUserId(USER_ID);
+        other.setQuestionId(QUESTION_ID);
+        other.setContextTokens(0);
+        when(conversationService.activateLatest(session)).thenReturn(other);
+
+        CompanionSessionVO vo = service.deleteConversation(user, deleteRequest(CONVERSATION_ID));
+
+        assertEquals(61L, vo.getConversationId());
+        verify(messageService).remove(any(Wrapper.class));
+        verify(traceService).deleteByConversation(CONVERSATION_ID);
+        verify(conversationService).removeById(CONVERSATION_ID);
+    }
+
+    @Test
+    void deletingAnotherConversationKeepsTheCurrentOne() {
+        CompanionConversation old = new CompanionConversation();
+        old.setId(62L);
+        old.setUserId(USER_ID);
+        old.setQuestionId(QUESTION_ID);
+        when(conversationService.requireOwned(USER_ID, 62L)).thenReturn(old);
+
+        CompanionSessionVO vo = service.deleteConversation(user, deleteRequest(62L));
+
+        assertEquals(CONVERSATION_ID, vo.getConversationId());
+        verify(conversationService).removeById(62L);
+        verify(conversationService, never()).activateLatest(any());
+    }
+
+    @Test
+    void conversationsAreNotDeletedWhileTheDuckIsAnsweringOrByOthers() {
+        try (AiCallGuard.Permit ignored = aiCallGuard.acquire(USER_ID)) {
+            assertThrows(BusinessException.class, () -> service.deleteConversation(user, deleteRequest(CONVERSATION_ID)));
+        }
+        assertEquals(ErrorCode.NOT_FOUND_ERROR.getCode(),
+                assertThrows(BusinessException.class, () -> service.deleteConversation(user, deleteRequest(99L))).getCode());
+        verify(conversationService, never()).removeById(any(Serializable.class));
+    }
+
+    private static CompanionDeleteConversationRequest deleteRequest(long conversationId) {
+        CompanionDeleteConversationRequest request = new CompanionDeleteConversationRequest();
+        request.setConversationId(conversationId);
+        return request;
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void chatOffersRewriteToolOnlyAtUnrestrictedLevel() {
         CompanionChatAssistant chatAssistant = mock(CompanionChatAssistant.class);
         when(chatAssistant.chat(anyString(), anyString())).thenAnswer(invocation -> new CompletingTokenStream());
-        when(assistantFactory.chatAssistant(any(), any(), any())).thenReturn(chatAssistant);
+        when(assistantFactory.chatAssistant(any(), any(), any(), any())).thenReturn(chatAssistant);
         when(prompts.chatMessage(any(), any(), anyString(), any(), anyString())).thenReturn("prompt");
 
         service.chat(user, chatRequest());
@@ -281,13 +340,14 @@ class CompanionServiceImplTest {
         service.chat(user, chatRequest());
 
         ArgumentCaptor<List<Object>> tools = ArgumentCaptor.forClass(List.class);
-        verify(assistantFactory, times(2)).chatAssistant(any(), any(), tools.capture());
+        verify(assistantFactory, times(2)).chatAssistant(any(), any(), tools.capture(), any());
         List<Object> guided = tools.getAllValues().get(0);
         List<Object> direct = tools.getAllValues().get(1);
         assertTrue(guided.stream().anyMatch(SubmissionHistoryTools.class::isInstance));
         assertTrue(guided.stream().anyMatch(CodeEditTools.class::isInstance));
         assertFalse(guided.stream().anyMatch(CodeRewriteTools.class::isInstance));
         assertTrue(direct.stream().anyMatch(CodeRewriteTools.class::isInstance));
+        assertTrue(guided.stream().anyMatch(NoteTools.class::isInstance));
         // 流式回答收尾：陪练的回答落库、上下文占用更新
         verify(conversationService, times(2)).updateContextTokens(eq(CONVERSATION_ID), eq(1500));
     }
@@ -296,7 +356,7 @@ class CompanionServiceImplTest {
     void chatWithQuoteSavesItAndTitlesTheConversation() {
         CompanionChatAssistant chatAssistant = mock(CompanionChatAssistant.class);
         when(chatAssistant.chat(anyString(), anyString())).thenAnswer(invocation -> new CompletingTokenStream());
-        when(assistantFactory.chatAssistant(any(), any(), any())).thenReturn(chatAssistant);
+        when(assistantFactory.chatAssistant(any(), any(), any(), any())).thenReturn(chatAssistant);
         when(prompts.chatMessage(any(), any(), anyString(), any(), anyString())).thenReturn("prompt");
         CompanionChatRequest request = chatRequest();
         CodeQuote quote = new CodeQuote();

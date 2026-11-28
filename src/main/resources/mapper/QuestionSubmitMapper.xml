@@ -103,4 +103,60 @@
           AND userId = #{userId}
     </select>
 
+    <!-- 用户按语言的提交统计；和全部提交次数一致，已删除的题也算 -->
+    <select id="selectUserLanguageStats" resultType="com.hjl.oj.model.dto.questionsubmit.LanguageStatRow">
+        SELECT language,
+               COUNT(*) AS submitCount,
+               COALESCE(SUM(CASE WHEN ${acceptedSql} THEN 1 ELSE 0 END), 0) AS acceptedCount,
+               COUNT(DISTINCT CASE WHEN ${acceptedSql} THEN questionId END) AS solvedCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+        GROUP BY language
+        ORDER BY submitCount DESC, language
+    </select>
+
+    <!-- 每道题第一次通过的那次提交：先给用户在每道题上的提交按时间编号（第几次），
+         再在通过的提交里取编号最小的一条；编号就是「第几次才通过」 -->
+    <select id="selectUserFirstAccepted" resultType="com.hjl.oj.model.dto.questionsubmit.FirstAcceptedRow">
+        SELECT questionId, createTime AS solvedTime, language, attemptNo AS attempts
+        FROM (
+            SELECT questionId, createTime, language, attemptNo,
+                   ROW_NUMBER() OVER (PARTITION BY questionId ORDER BY attemptNo) AS acceptedRank
+            FROM (
+                SELECT questionId, createTime, language, status, judgeInfo,
+                       ROW_NUMBER() OVER (PARTITION BY questionId ORDER BY createTime, id) AS attemptNo
+                FROM question_submit
+                WHERE isDelete = 0
+                  AND userId = #{userId}
+                  AND questionId IN (SELECT id FROM question WHERE isDelete = 0)
+            ) numbered
+            WHERE ${acceptedSql}
+        ) accepted
+        WHERE acceptedRank = 1
+        ORDER BY solvedTime DESC, questionId DESC
+    </select>
+
+    <!-- 一天里各个小时的提交次数（看用户习惯什么时候做题） -->
+    <select id="selectUserHourCounts" resultType="com.hjl.oj.model.dto.questionsubmit.HourCountRow">
+        SELECT HOUR(createTime) AS hour, COUNT(*) AS submitCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND createTime &gt;= DATE_SUB(CURDATE(), INTERVAL #{days} - 1 DAY)
+        GROUP BY HOUR(createTime)
+    </select>
+
+    <!-- 判完的提交按「状态 + 判题消息第一行」分组；第一行就是结果（中英文写法都有），再由 VerdictClassifier 归类 -->
+    <select id="selectUserVerdictCounts" resultType="com.hjl.oj.model.dto.questionsubmit.VerdictCountRow">
+        SELECT status,
+               SUBSTRING_INDEX(TRIM(JSON_UNQUOTE(JSON_EXTRACT(judgeInfo, '$.message'))), '\n', 1) AS message,
+               COUNT(*) AS submitCount
+        FROM question_submit
+        WHERE isDelete = 0
+          AND userId = #{userId}
+          AND status IN (2, 3)
+        GROUP BY status, message
+    </select>
+
 </mapper>

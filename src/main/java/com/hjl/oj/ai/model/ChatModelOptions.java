@@ -1,5 +1,9 @@
 package com.hjl.oj.ai.model;
 
+import dev.langchain4j.model.chat.listener.ChatModelListener;
+
+import java.util.List;
+
 /**
  * 创建一次调用所用模型的选项。
  *
@@ -8,6 +12,16 @@ package com.hjl.oj.ai.model;
  * @param purpose    调用用途，用于日志和模拟回复，如 companion.chat
  * @param thinking   是否开启思考模式
  * @param jsonOutput 是否要求输出 JSON（DeepSeek 的 json_object 模式）
+ * @param listeners  这一次调用额外的监听器（比如记录轨迹），在用量日志之后执行
  */
-public record ChatModelOptions(String apiKey, String modelName, String purpose, boolean thinking, boolean jsonOutput) {
+public record ChatModelOptions(String apiKey, String modelName, String purpose, boolean thinking, boolean jsonOutput,
+                               List<ChatModelListener> listeners) {
+
+    public ChatModelOptions {
+        listeners = listeners == null ? List.of() : List.copyOf(listeners);
+    }
+
+    public ChatModelOptions(String apiKey, String modelName, String purpose, boolean thinking, boolean jsonOutput) {
+        this(apiKey, modelName, purpose, thinking, jsonOutput, List.of());
+    }
 }

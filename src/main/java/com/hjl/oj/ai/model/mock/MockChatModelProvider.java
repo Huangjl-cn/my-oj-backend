@@ -2,10 +2,12 @@ package com.hjl.oj.ai.model.mock;
 
 import com.hjl.oj.ai.model.ChatModelOptions;
 import com.hjl.oj.ai.model.ChatModelProvider;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
@@ -13,8 +15,10 @@ import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.output.TokenUsage;
 
+import java.util.List;
+
 /**
- * 模拟模型：不访问网络，回复内容来自 MockReplyGenerator。不会发起工具调用。
+ * 模拟模型：不访问网络，回复内容和要发起的工具调用都来自 MockReplyGenerator。监听器照常收到请求和回复（轨迹在模拟模式下也能看）。
  */
 public class MockChatModelProvider implements ChatModelProvider {
 
@@ -32,7 +36,16 @@ public class MockChatModelProvider implements ChatModelProvider {
     public ChatModel chatModel(ChatModelOptions options) {
         return new ChatModel() {
             @Override
+            public List<ChatModelListener> listeners() {
+                return options.listeners();
+            }
+
+            @Override
             public ChatResponse doChat(ChatRequest chatRequest) {
+                List<ToolExecutionRequest> toolCalls = replyGenerator.toolCalls(options, chatRequest);
+                if (!toolCalls.isEmpty()) {
+                    return response(AiMessage.from(toolCalls), chatRequest);
+                }
                 String reply = replyGenerator.reply(options, chatRequest);
                 AiMessage.Builder message = AiMessage.builder().text(reply);
                 if (options.thinking()) {
@@ -47,8 +60,18 @@ public class MockChatModelProvider implements ChatModelProvider {
     public StreamingChatModel streamingChatModel(ChatModelOptions options) {
         return new StreamingChatModel() {
             @Override
+            public List<ChatModelListener> listeners() {
+                return options.listeners();
+            }
+
+            @Override
             public void doChat(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
                 try {
+                    List<ToolExecutionRequest> toolCalls = replyGenerator.toolCalls(options, chatRequest);
+                    if (!toolCalls.isEmpty()) {
+                        handler.onCompleteResponse(response(AiMessage.from(toolCalls), chatRequest));
+                        return;
+                    }
                     AiMessage.Builder message = AiMessage.builder();
                     if (options.thinking()) {
                         String thinking = replyGenerator.thinking(options, chatRequest);
@@ -75,7 +98,7 @@ public class MockChatModelProvider implements ChatModelProvider {
                 .aiMessage(message)
                 .modelName(MOCK_MODEL_NAME)
                 .tokenUsage(new TokenUsage(inputTokens, outputTokens))
-                .finishReason(FinishReason.STOP)
+                .finishReason(message.hasToolExecutionRequests() ? FinishReason.TOOL_EXECUTION : FinishReason.STOP)
                 .build();
     }
 }

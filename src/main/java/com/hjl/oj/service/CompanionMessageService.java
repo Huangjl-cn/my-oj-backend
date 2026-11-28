@@ -2,6 +2,7 @@ package com.hjl.oj.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.hjl.oj.companion.edit.CodeEditProposal;
+import com.hjl.oj.companion.note.NoteProposal;
 import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.entity.CompanionConversation;
 import com.hjl.oj.model.entity.CompanionMessage;
@@ -20,7 +21,24 @@ public interface CompanionMessageService extends IService<CompanionMessage> {
     /**
      * 保存一条消息，附带的修改建议序列化为 JSON
      */
-    CompanionMessage saveMessage(CompanionMessage message, CodeEditProposal codeEdits);
+    default CompanionMessage saveMessage(CompanionMessage message, CodeEditProposal codeEdits) {
+        return saveMessage(message, codeEdits, List.of());
+    }
+
+    /**
+     * 保存一条消息，附带的代码修改建议和笔记提议序列化为 JSON（没有笔记提议时传空列表）
+     */
+    CompanionMessage saveMessage(CompanionMessage message, CodeEditProposal codeEdits, List<NoteProposal> noteEdits);
+
+    /**
+     * 消息上的笔记提议，解析失败或没有时返回空列表
+     */
+    List<NoteProposal> noteEdits(CompanionMessage message);
+
+    /**
+     * 改写消息上的笔记提议（用户应用后标记已应用）
+     */
+    void updateNoteEdits(long messageId, List<NoteProposal> noteEdits);
 
     /**
      * 保存用户说的一句话，quote 为引用的代码，可为空

@@ -1,10 +1,14 @@
 package com.hjl.oj.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hjl.oj.companion.edit.CodeEditProposal;
+import com.hjl.oj.companion.note.NoteProposal;
 import com.hjl.oj.mapper.CompanionMessageMapper;
 import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.entity.CompanionConversation;
@@ -32,6 +36,9 @@ import java.util.Map;
 public class CompanionMessageServiceImpl extends ServiceImpl<CompanionMessageMapper, CompanionMessage>
         implements CompanionMessageService {
 
+    private static final TypeReference<List<NoteProposal>> NOTE_EDITS_TYPE = new TypeReference<>() {
+    };
+
     private final ObjectMapper objectMapper;
 
     public CompanionMessageServiceImpl(ObjectMapper objectMapper) {
@@ -39,9 +46,13 @@ public class CompanionMessageServiceImpl extends ServiceImpl<CompanionMessageMap
     }
 
     @Override
-    public CompanionMessage saveMessage(CompanionMessage message, CodeEditProposal codeEdits) {
+    public CompanionMessage saveMessage(CompanionMessage message, CodeEditProposal codeEdits,
+                                        List<NoteProposal> noteEdits) {
         if (codeEdits != null) {
             message.setCodeEdits(toJson(codeEdits));
+        }
+        if (noteEdits != null && !noteEdits.isEmpty()) {
+            message.setNoteEdits(toJson(noteEdits));
         }
         if (message.getCreateTime() == null) {
             message.setCreateTime(new Date());
@@ -150,10 +161,25 @@ public class CompanionMessageServiceImpl extends ServiceImpl<CompanionMessageMap
     @Override
     public CompanionMessageVO toVO(CompanionMessage message) {
         CompanionMessageVO vo = new CompanionMessageVO();
-        BeanUtils.copyProperties(message, vo, "codeEdits", "quote");
+        BeanUtils.copyProperties(message, vo, "codeEdits", "noteEdits", "quote");
         vo.setCodeEdits(fromJson(message.getCodeEdits(), CodeEditProposal.class, message.getId()));
+        List<NoteProposal> noteEdits = noteEdits(message);
+        vo.setNoteEdits(noteEdits.isEmpty() ? null : noteEdits);
         vo.setQuote(fromJson(message.getQuote(), CodeQuote.class, message.getId()));
         return vo;
+    }
+
+    @Override
+    public List<NoteProposal> noteEdits(CompanionMessage message) {
+        List<NoteProposal> noteEdits = fromJson(message.getNoteEdits(), NOTE_EDITS_TYPE, message.getId());
+        return noteEdits == null ? List.of() : noteEdits;
+    }
+
+    @Override
+    public void updateNoteEdits(long messageId, List<NoteProposal> noteEdits) {
+        this.update(new UpdateWrapper<CompanionMessage>()
+                .eq("id", messageId)
+                .set("noteEdits", toJson(noteEdits)));
     }
 
     private String toJson(Object value) {
@@ -165,13 +191,21 @@ public class CompanionMessageServiceImpl extends ServiceImpl<CompanionMessageMap
     }
 
     private <T> T fromJson(String json, Class<T> type, Long messageId) {
+        return fromJson(json, objectMapper.constructType(type), messageId);
+    }
+
+    private <T> T fromJson(String json, TypeReference<T> type, Long messageId) {
+        return fromJson(json, objectMapper.constructType(type), messageId);
+    }
+
+    private <T> T fromJson(String json, JavaType type, Long messageId) {
         if (json == null) {
             return null;
         }
         try {
             return objectMapper.readValue(json, type);
         } catch (JsonProcessingException e) {
-            log.warn("陪练消息附带的 {} 无法解析 messageId={}", type.getSimpleName(), messageId);
+            log.warn("陪练消息附带的 {} 无法解析 messageId={}", type.getRawClass().getSimpleName(), messageId);
             return null;
         }
     }

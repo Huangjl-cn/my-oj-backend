@@ -2,10 +2,14 @@ package com.hjl.oj.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.hjl.oj.model.dto.questionsubmit.FirstAcceptedRow;
+import com.hjl.oj.model.dto.questionsubmit.HourCountRow;
+import com.hjl.oj.model.dto.questionsubmit.LanguageStatRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionProgressRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitGroupRow;
 import com.hjl.oj.model.dto.questionsubmit.QuestionSubmitRankStatsRow;
 import com.hjl.oj.model.dto.questionsubmit.SubmitDayRow;
+import com.hjl.oj.model.dto.questionsubmit.VerdictCountRow;
 import com.hjl.oj.model.entity.QuestionSubmit;
 import org.apache.ibatis.annotations.Param;
 
@@ -88,4 +92,26 @@ public interface QuestionSubmitMapper extends BaseMapper<QuestionSubmit> {
      */
     SubmitDayRow selectUserSubmitTotals(@Param("acceptedSql") String acceptedSql,
                                         @Param("userId") long userId);
+
+    /**
+     * 用户按语言的提交次数、通过次数、通过的题目数，按提交次数从多到少
+     */
+    List<LanguageStatRow> selectUserLanguageStats(@Param("acceptedSql") String acceptedSql,
+                                                  @Param("userId") long userId);
+
+    /**
+     * 用户在每道题（只算未删除的题）上第一次通过的那次提交：通过时间、语言、是第几次提交；按通过时间从近到远
+     */
+    List<FirstAcceptedRow> selectUserFirstAccepted(@Param("acceptedSql") String acceptedSql,
+                                                   @Param("userId") long userId);
+
+    /**
+     * 用户最近 days 天（含今天）在一天里各个小时的提交次数，只有有提交的小时
+     */
+    List<HourCountRow> selectUserHourCounts(@Param("userId") long userId, @Param("days") int days);
+
+    /**
+     * 用户判完的提交（成功判完和判题失败）按「状态 + 判题消息第一行」分组的次数
+     */
+    List<VerdictCountRow> selectUserVerdictCounts(@Param("userId") long userId);
 }

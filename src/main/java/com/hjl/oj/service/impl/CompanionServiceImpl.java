@@ -24,17 +24,22 @@ import com.hjl.oj.companion.memory.ConversationMemoryId;
 import com.hjl.oj.companion.memory.MemoryCompactor;
 import com.hjl.oj.companion.memory.MemoryTranscript;
 import com.hjl.oj.companion.memory.MysqlChatMemoryStore;
+import com.hjl.oj.companion.note.NoteEditSession;
+import com.hjl.oj.companion.note.NoteProposal;
 import com.hjl.oj.companion.prompt.CompanionPrompts;
 import com.hjl.oj.companion.reaction.FallbackReactions;
 import com.hjl.oj.companion.stream.CompanionSse;
 import com.hjl.oj.companion.tool.CodeEditTools;
 import com.hjl.oj.companion.tool.CodeRewriteTools;
+import com.hjl.oj.companion.tool.NoteTools;
+import com.hjl.oj.companion.trace.TraceRecorder;
 import com.hjl.oj.companion.tool.SubmissionHistoryTools;
 import com.hjl.oj.exception.BusinessException;
 import com.hjl.oj.model.dto.companion.CodeQuote;
 import com.hjl.oj.model.dto.companion.CodeSnapshot;
 import com.hjl.oj.model.dto.companion.CompanionChatRequest;
 import com.hjl.oj.model.dto.companion.CompanionCompactRequest;
+import com.hjl.oj.model.dto.companion.CompanionDeleteConversationRequest;
 import com.hjl.oj.model.dto.companion.CompanionHintRequest;
 import com.hjl.oj.model.dto.companion.CompanionLevelRequest;
 import com.hjl.oj.model.dto.companion.CompanionNewConversationRequest;
@@ -67,6 +72,8 @@ import com.hjl.oj.service.CompanionConversationService;
 import com.hjl.oj.service.CompanionMessageService;
 import com.hjl.oj.service.CompanionService;
 import com.hjl.oj.service.CompanionSessionService;
+import com.hjl.oj.service.CompanionTraceService;
+import com.hjl.oj.service.NoteService;
 import com.hjl.oj.service.QuestionService;
 import com.hjl.oj.service.QuestionSubmitService;
 import dev.langchain4j.data.message.AiMessage;
@@ -79,6 +86,7 @@ import dev.langchain4j.service.TokenStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.ZoneId;
@@ -158,13 +166,18 @@ public class CompanionServiceImpl implements CompanionService {
 
     private final AiProperties aiProperties;
 
+    private final NoteService noteService;
+
+    private final CompanionTraceService companionTraceService;
+
     public CompanionServiceImpl(QuestionService questionService, QuestionSubmitService questionSubmitService,
                                 AiSettingService aiSettingService, CompanionSessionService companionSessionService,
                                 CompanionConversationService companionConversationService,
                                 CompanionMessageService companionMessageService,
                                 CompanionAssistantFactory assistantFactory, CompanionPrompts companionPrompts,
                                 MemoryCompactor memoryCompactor, MysqlChatMemoryStore chatMemoryStore,
-                                AiCallGuard aiCallGuard, AiProperties aiProperties) {
+                                AiCallGuard aiCallGuard, AiProperties aiProperties, NoteService noteService,
+                                CompanionTraceService companionTraceService) {
         this.questionService = questionService;
         this.questionSubmitService = questionSubmitService;
         this.aiSettingService = aiSettingService;
@@ -177,6 +190,8 @@ public class CompanionServiceImpl implements CompanionService {
         this.chatMemoryStore = chatMemoryStore;
         this.aiCallGuard = aiCallGuard;
         this.aiProperties = aiProperties;
+        this.noteService = noteService;
+        this.companionTraceService = companionTraceService;
     }
 
     // region 会话与对话
@@ -222,6 +237,29 @@ public class CompanionServiceImpl implements CompanionService {
         }
         Target target = target(loginUser.getId(), request.getConversationId());
         return sessionVO(target.session(), target.conversation());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CompanionSessionVO deleteConversation(User loginUser, CompanionDeleteConversationRequest request) {
+        if (request == null || request.getConversationId() == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        long userId = loginUser.getId();
+        CompanionConversation conversation = companionConversationService.requireOwned(userId,
+                request.getConversationId());
+        // 鸭鸭正在回答时不删：回答结束还要往这段对话里写消息
+        try (AiCallGuard.Permit ignored = aiCallGuard.acquire(userId)) {
+            CompanionSession session = companionSessionService.getOrCreate(userId, conversation.getQuestionId());
+            long id = conversation.getId();
+            companionMessageService.remove(new QueryWrapper<CompanionMessage>().eq("conversationId", id));
+            companionTraceService.deleteByConversation(id);
+            companionConversationService.removeById(id);
+            CompanionConversation active = Objects.equals(session.getActiveConversationId(), id)
+                    ? companionConversationService.activateLatest(session)
+                    : companionConversationService.getActive(session);
+            return sessionVO(session, active);
+        }
     }
 
     private CompanionSessionVO sessionVO(CompanionSession session, CompanionConversation conversation) {
@@ -283,17 +321,22 @@ public class CompanionServiceImpl implements CompanionService {
         List<String> recentLines = companionMessageService.recentReactionLines(userId, questionId, RECENT_REACTION_LINES);
 
         ReactionAnswer answer = null;
+        TraceRecorder trace = null;
+        RuntimeException failure = null;
         if (aiSettingService.canCallModel(userId)) {
+            trace = companionTraceService.startTurn(userId, questionId, conversation.getId(),
+                    CompanionMessageTypeEnum.REACTION.getValue(), "提交了代码，判题结果：" + verdict.getText());
             try {
                 SubmissionFacts facts = submissionFacts(submission, question);
                 String transcript = MemoryTranscript.render(
                         chatMemoryStore.getMessages(new ConversationMemoryId(conversation.getId())), TRANSCRIPT_CHARS);
                 String prompt = companionPrompts.reactionMessage(state, facts, submission.getCode(),
                         submission.getLanguage(), recentLines, transcript);
-                answer = assistantFactory.reactionAssistant(aiSettingService.requireCredential(userId))
+                answer = assistantFactory.reactionAssistant(aiSettingService.requireCredential(userId), trace)
                         .react(companionPrompts.systemMessage(question), prompt)
                         .content();
             } catch (RuntimeException e) {
+                failure = e;
                 log.warn("陪练反应调用失败，改用兜底话术 submissionId={}, error={}", submission.getId(), e.toString());
             }
         }
@@ -315,6 +358,13 @@ public class CompanionServiceImpl implements CompanionService {
         message.setSubmissionId(submission.getId());
         message.setContent(answer.getMessage());
         companionMessageService.saveMessage(message, null);
+        if (trace != null) {
+            if (fallback) {
+                trace.fallback(message.getId(), failure);
+            } else {
+                trace.finish(message.getId());
+            }
+        }
         if (track != state.track()) {
             companionSessionService.updateHintTrack(session.getId(), track);
         }
@@ -366,6 +416,7 @@ public class CompanionServiceImpl implements CompanionService {
         Target target = target(userId, request.getConversationId());
         AiCredential credential = aiSettingService.requireCredential(userId);
         AiCallGuard.Permit permit = aiCallGuard.acquire(userId);
+        TraceRecorder trace = null;
         try {
             HintState state = hintState(target.session(), aiSettingService.getHintMode(userId));
             String systemPrompt = companionPrompts.systemMessage(target.question());
@@ -380,18 +431,26 @@ public class CompanionServiceImpl implements CompanionService {
             if (state.editPermission() == EditPermission.UNRESTRICTED) {
                 tools.add(new CodeRewriteTools(editSession));
             }
+            NoteEditSession noteSession = new NoteEditSession(loginUser, target.questionId(),
+                    target.question().getTitle(), state.effectiveLevel(), snapshot.getCode(), noteService);
+            tools.add(new NoteTools(loginUser, target.questionId(), noteService, noteSession,
+                    aiProperties.getCompanion().getMaxToolResultChars()));
             String userText = request.getMessage().strip();
             String userPrompt = companionPrompts.chatMessage(state, snapshot, recentEvents(target), quote, userText);
             companionMessageService.saveUserMessage(target.conversation(), CompanionMessageTypeEnum.CHAT, userText, quote);
             companionConversationService.titleIfAbsent(target.conversation().getId(), userText);
 
+            trace = startTrace(target, CompanionMessageTypeEnum.CHAT, userText);
             TokenStream stream = assistantFactory
-                    .chatAssistant(credential, assistantFactory.conversationMemory(target.memoryId()), tools)
+                    .chatAssistant(credential, assistantFactory.conversationMemory(target.memoryId()), tools, trace)
                     .chat(systemPrompt, userPrompt);
-            return streamAnswer(stream, permit, target, state, editSession, CompanionMessageTypeEnum.CHAT,
-                    compacted, Function.identity());
+            return streamAnswer(stream, permit, target, state, editSession, noteSession, trace,
+                    CompanionMessageTypeEnum.CHAT, compacted, Function.identity());
         } catch (RuntimeException e) {
             permit.close();
+            if (trace != null) {
+                trace.fail(e);
+            }
             throw aiFailure(e);
         }
     }
@@ -426,6 +485,7 @@ public class CompanionServiceImpl implements CompanionService {
         long userId = loginUser.getId();
         Target target = target(userId, request.getConversationId());
         AiCredential credential = aiSettingService.requireCredential(userId);
+        TraceRecorder trace = null;
         try (AiCallGuard.Permit ignored = aiCallGuard.acquire(userId)) {
             CompanionSession session = target.session();
             HintState state = hintState(session, aiSettingService.getHintMode(userId));
@@ -434,7 +494,9 @@ public class CompanionServiceImpl implements CompanionService {
 
             String recentEvents = recentEvents(target);
             String transcript = MemoryTranscript.render(chatMemoryStore.getMessages(target.memoryId()), TRANSCRIPT_CHARS);
-            HintAnswer answer = assistantFactory.hintAssistant(credential)
+            trace = startTrace(target, CompanionMessageTypeEnum.HINT,
+                    "要一条提示（" + HintLadder.step(state.effectiveLevel()).title() + "）");
+            HintAnswer answer = assistantFactory.hintAssistant(credential, trace)
                     .hint(systemPrompt, companionPrompts.hintMessage(state, snapshot, recentEvents, transcript))
                     .content();
 
@@ -456,6 +518,7 @@ public class CompanionServiceImpl implements CompanionService {
             message.setHintLevel(level);
             message.setContent(answer.getMessage());
             companionMessageService.saveMessage(message, proposal);
+            trace.finish(message.getId());
 
             CompanionHintVO vo = new CompanionHintVO();
             vo.setMessageId(message.getId());
@@ -466,6 +529,9 @@ public class CompanionServiceImpl implements CompanionService {
             vo.setContextUsage(contextUsage(userId, target.conversation().getContextTokens(), false));
             return vo;
         } catch (RuntimeException e) {
+            if (trace != null) {
+                trace.fail(e);
+            }
             throw aiFailure(e);
         }
     }
@@ -501,6 +567,7 @@ public class CompanionServiceImpl implements CompanionService {
         Target target = target(userId, request.getConversationId());
         AiCredential credential = aiSettingService.requireCredential(userId);
         AiCallGuard.Permit permit = aiCallGuard.acquire(userId);
+        TraceRecorder trace = null;
         try {
             CompanionSession session = target.session();
             HintState state = hintState(session, aiSettingService.getHintMode(userId)).withLevel(HintLadder.SOLUTION_LEVEL);
@@ -512,8 +579,9 @@ public class CompanionServiceImpl implements CompanionService {
 
             CodeEditSession editSession = new CodeEditSession(snapshot.getCode(), snapshot.getLanguage(),
                     EditPermission.UNRESTRICTED);
+            trace = startTrace(target, CompanionMessageTypeEnum.SOLUTION, SOLUTION_USER_TEXT);
             TokenStream stream = assistantFactory
-                    .solutionAssistant(credential, assistantFactory.conversationMemory(target.memoryId()))
+                    .solutionAssistant(credential, assistantFactory.conversationMemory(target.memoryId()), trace)
                     .solve(systemPrompt, companionPrompts.solutionMessage(state, snapshot));
             // 参考代码不走工具：从回答里取最后一个代码块，作为整体替换建议
             Function<String, String> extractCode = answer -> {
@@ -527,10 +595,13 @@ public class CompanionServiceImpl implements CompanionService {
                 }
                 return answer;
             };
-            return streamAnswer(stream, permit, target, state, editSession, CompanionMessageTypeEnum.SOLUTION,
-                    compacted, extractCode);
+            return streamAnswer(stream, permit, target, state, editSession, null, trace,
+                    CompanionMessageTypeEnum.SOLUTION, compacted, extractCode);
         } catch (RuntimeException e) {
             permit.close();
+            if (trace != null) {
+                trace.fail(e);
+            }
             throw aiFailure(e);
         }
     }
@@ -569,7 +640,7 @@ public class CompanionServiceImpl implements CompanionService {
         AiCredential credential = aiSettingService.requireCredential(userId);
         try (AiCallGuard.Permit ignored = aiCallGuard.acquire(userId)) {
             Optional<CompanionMessage> note = runCompaction(target, credential,
-                    companionPrompts.systemMessage(target.question()));
+                    companionPrompts.systemMessage(target.question()), "手动整理记忆");
             CompanionCompactionVO vo = new CompanionCompactionVO();
             vo.setCompacted(note.isPresent());
             note.ifPresent(message -> {
@@ -593,24 +664,37 @@ public class CompanionServiceImpl implements CompanionService {
         if (used < window * aiProperties.getCompanion().getCompactRatio()) {
             return false;
         }
-        return runCompaction(target, credential, systemPrompt).isPresent();
+        return runCompaction(target, credential, systemPrompt, "上下文快满了，自动整理记忆").isPresent();
     }
 
-    private Optional<CompanionMessage> runCompaction(Target target, AiCredential credential, String systemPrompt) {
+    /**
+     * @param reason 写进轨迹：手动还是自动整理
+     */
+    private Optional<CompanionMessage> runCompaction(Target target, AiCredential credential, String systemPrompt,
+                                                     String reason) {
         CompanionConversation conversation = target.conversation();
         List<String> questions = companionMessageService.userQuestions(conversation.getId(), USER_QUESTION_LIMIT);
-        Optional<MemoryCompactor.CompactionResult> result = memoryCompactor.compact(target.memoryId(),
-                assistantFactory.compactionAssistant(credential), systemPrompt,
-                aiProperties.getCompanion().getKeepRecentRounds(), questions);
-        if (result.isEmpty()) {
-            return Optional.empty();
+        TraceRecorder trace = startTrace(target, CompanionMessageTypeEnum.COMPACTION, reason);
+        try {
+            Optional<MemoryCompactor.CompactionResult> result = memoryCompactor.compact(target.memoryId(),
+                    assistantFactory.compactionAssistant(credential, trace), systemPrompt,
+                    aiProperties.getCompanion().getKeepRecentRounds(), questions);
+            if (result.isEmpty()) {
+                // 对话太短，没什么可整理的：轨迹里不留这一轮
+                trace.discard();
+                return Optional.empty();
+            }
+            companionConversationService.updateContextTokens(conversation.getId(), result.get().estimatedTokens());
+            conversation.setContextTokens(result.get().estimatedTokens());
+            CompanionMessage message = assistantMessage(target, CompanionMessageTypeEnum.COMPACTION, null);
+            message.setContent(result.get().note());
+            companionMessageService.saveMessage(message, null);
+            trace.finish(message.getId());
+            return Optional.of(message);
+        } catch (RuntimeException e) {
+            trace.fail(e);
+            throw e;
         }
-        companionConversationService.updateContextTokens(conversation.getId(), result.get().estimatedTokens());
-        conversation.setContextTokens(result.get().estimatedTokens());
-        CompanionMessage message = assistantMessage(target, CompanionMessageTypeEnum.COMPACTION, null);
-        message.setContent(result.get().note());
-        companionMessageService.saveMessage(message, null);
-        return Optional.of(message);
     }
 
     // endregion
@@ -618,13 +702,16 @@ public class CompanionServiceImpl implements CompanionService {
     // region 流式回答
 
     /**
-     * 把 TokenStream 接到 SSE：正文和思考逐段推送，结束时落库、推送修改建议和 done，并更新上下文占用。
+     * 把 TokenStream 接到 SSE：正文和思考逐段推送，结束时落库、推送修改建议、笔记提议和 done，并更新上下文占用。
      *
+     * @param noteSession  这一轮的笔记提议，没有笔记工具时为空
+     * @param trace        这一轮的轨迹记录器：工具执行完交给它，结束时标记完成或出错
      * @param finishAnswer 结束时对完整回答的处理（参考解法用它提取代码），返回要保存的正文
      */
     private SseEmitter streamAnswer(TokenStream stream, AiCallGuard.Permit permit, Target target,
-                                    HintState state, CodeEditSession editSession, CompanionMessageTypeEnum type,
-                                    boolean compacted, Function<String, String> finishAnswer) {
+                                    HintState state, CodeEditSession editSession, NoteEditSession noteSession,
+                                    TraceRecorder trace, CompanionMessageTypeEnum type, boolean compacted,
+                                    Function<String, String> finishAnswer) {
         CompanionSse sse = new CompanionSse(STREAM_TIMEOUT_MILLIS);
         sse.onFinish(permit::close);
         StringBuilder answer = new StringBuilder();
@@ -635,6 +722,7 @@ public class CompanionServiceImpl implements CompanionService {
                     sse.send(CompanionSse.EVENT_DELTA, Map.of("text", text));
                 })
                 .onPartialThinking(thinking -> sse.send(CompanionSse.EVENT_THINKING, Map.of("text", thinking.text())))
+                .onToolExecuted(trace::recordTool)
                 .onIntermediateResponse(response -> {
                     TokenUsage usage = response.tokenUsage();
                     if (usage != null) {
@@ -646,15 +734,20 @@ public class CompanionServiceImpl implements CompanionService {
                     try {
                         String content = finishAnswer.apply(answer.isEmpty() ? textOf(response) : answer.toString());
                         CodeEditProposal proposal = editSession.proposal().orElse(null);
+                        List<NoteProposal> notes = noteSession == null ? List.of() : noteSession.proposals();
                         CompanionMessage message = assistantMessage(target, type, state.track());
                         message.setHintLevel(type == CompanionMessageTypeEnum.SOLUTION ? HintLadder.SOLUTION_LEVEL : null);
                         message.setContent(StringUtils.defaultIfBlank(content, "（没有回答内容）"));
-                        companionMessageService.saveMessage(message, proposal);
+                        companionMessageService.saveMessage(message, proposal, notes);
+                        trace.finish(message.getId());
 
                         int contextTokens = lastCallContextTokens(response, intermediateInput.get(), intermediateOutput.get());
                         companionConversationService.updateContextTokens(target.conversation().getId(), contextTokens);
                         if (proposal != null) {
                             sse.send(CompanionSse.EVENT_EDITS, proposal);
+                        }
+                        if (!notes.isEmpty()) {
+                            sse.send(CompanionSse.EVENT_NOTES, notes);
                         }
                         CompanionStreamDoneVO done = new CompanionStreamDoneVO();
                         done.setMessageId(message.getId());
@@ -664,6 +757,7 @@ public class CompanionServiceImpl implements CompanionService {
                         sse.send(CompanionSse.EVENT_DONE, done);
                     } catch (RuntimeException e) {
                         log.error("陪练回答收尾失败 conversationId={}", target.conversation().getId(), e);
+                        trace.fail(e);
                         sendError(sse, AiErrorTranslator.translate(e));
                     } finally {
                         sse.complete();
@@ -674,6 +768,7 @@ public class CompanionServiceImpl implements CompanionService {
                     BusinessException translated = AiErrorTranslator.translate(error);
                     log.warn("陪练流式回答失败 conversationId={}, code={}, error={}", target.conversation().getId(),
                             translated.getCode(), error.toString());
+                    trace.fail(error);
                     sendError(sse, translated);
                     sse.complete();
                     permit.close();
@@ -769,6 +864,11 @@ public class CompanionServiceImpl implements CompanionService {
         CompanionSession session = companionSessionService.getOrCreate(userId, conversation.getQuestionId());
         companionConversationService.activate(session, conversation);
         return new Target(conversation, session, question);
+    }
+
+    private TraceRecorder startTrace(Target target, CompanionMessageTypeEnum type, String userText) {
+        return companionTraceService.startTurn(target.userId(), target.questionId(), target.conversation().getId(),
+                type.getValue(), userText);
     }
 
     private static CompanionMessage assistantMessage(Target target, CompanionMessageTypeEnum type, HintTrackEnum track) {

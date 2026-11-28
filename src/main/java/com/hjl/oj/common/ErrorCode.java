@@ -14,6 +14,7 @@ public enum ErrorCode {
     NO_AUTH_ERROR(40101, "无权限"),
     NOT_FOUND_ERROR(40400, "请求数据不存在"),
     FORBIDDEN_ERROR(40300, "禁止访问"),
+    CONFLICT_ERROR(40900, "内容在别处改过了，请刷新后再试"),
     AI_KEY_NOT_CONFIGURED(40020, "请先配置 AI 的 API Key"),
     AI_KEY_INVALID(40021, "API Key 无效，请检查后重新填写"),
     AI_BALANCE_INSUFFICIENT(40022, "AI 账户余额不足，请充值后再试"),
